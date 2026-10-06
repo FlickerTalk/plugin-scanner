@@ -1,7 +1,7 @@
 {
   "id": "com.flickertalk.scanner",
   "name": "Scanner",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minCoreVersion": "1.1.0",
   "components": [
     "ft-scanner"
