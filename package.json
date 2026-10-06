@@ -1,0 +1,14 @@
+{
+  "name": "@flickertalk/plugin-scanner",
+  "private": true,
+  "version": "1.0.0",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "happy-dom": "^20.0.0",
+    "vitest": "^5.0.1"
+  }
+}

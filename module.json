@@ -1,0 +1,98 @@
+{
+  "id": "com.flickertalk.scanner",
+  "name": "Scanner",
+  "version": "1.0.0",
+  "minCoreVersion": "1.1.0",
+  "components": [
+    "ft-scanner"
+  ],
+  "opens": [
+    "image/*"
+  ],
+  "permissions": {
+    "send": "propose"
+  },
+  "summary": "Turn a photo of a paper into a straight, clean document and send it as a PDF or a picture.",
+  "locales": {
+    "es": {
+      "name": "Escáner",
+      "summary": "Convierte la foto de un papel en un documento recto y limpio, y envíalo como PDF o como imagen."
+    },
+    "pt": {
+      "name": "Scanner",
+      "summary": "Transforme a foto de um papel num documento direito e limpo, e envie-o como PDF ou como imagem."
+    },
+    "fr": {
+      "name": "Scanner",
+      "summary": "Transformez la photo d’un papier en un document droit et net, et envoyez-le en PDF ou en image."
+    },
+    "de": {
+      "name": "Scanner",
+      "summary": "Mach aus dem Foto eines Blatts ein gerades, sauberes Dokument und schick es als PDF oder Bild."
+    },
+    "it": {
+      "name": "Scanner",
+      "summary": "Trasforma la foto di un foglio in un documento dritto e pulito, e invialo come PDF o come immagine."
+    },
+    "ro": {
+      "name": "Scaner",
+      "summary": "Transformă fotografia unei hârtii într-un document drept și curat, și trimite-l ca PDF sau ca imagine."
+    },
+    "ru": {
+      "name": "Сканер",
+      "summary": "Превратите фото листа в ровный чистый документ и отправьте его как PDF или изображение."
+    },
+    "uk": {
+      "name": "Сканер",
+      "summary": "Перетворіть фото аркуша на рівний чистий документ і надішліть його як PDF або зображення."
+    },
+    "pl": {
+      "name": "Skaner",
+      "summary": "Zamień zdjęcie kartki w prosty, czysty dokument i wyślij go jako PDF lub obraz."
+    },
+    "tr": {
+      "name": "Tarayıcı",
+      "summary": "Bir kâğıdın fotoğrafını düz ve temiz bir belgeye çevir, PDF veya görsel olarak gönder."
+    },
+    "ar": {
+      "name": "ماسح ضوئي",
+      "summary": "حوّل صورة ورقة إلى مستند مستقيم ونظيف وأرسله بصيغة PDF أو كصورة."
+    },
+    "hi": {
+      "name": "स्कैनर",
+      "summary": "कागज़ की तस्वीर को सीधे, साफ़ दस्तावेज़ में बदलें और PDF या तस्वीर के रूप में भेजें।"
+    },
+    "bn": {
+      "name": "স্ক্যানার",
+      "summary": "কাগজের ছবিকে সোজা, পরিষ্কার নথিতে বদলে PDF বা ছবি হিসেবে পাঠান।"
+    },
+    "id": {
+      "name": "Pemindai",
+      "summary": "Ubah foto kertas menjadi dokumen yang lurus dan bersih, lalu kirim sebagai PDF atau gambar."
+    },
+    "vi": {
+      "name": "Máy quét",
+      "summary": "Biến ảnh chụp tờ giấy thành tài liệu thẳng, sạch và gửi dưới dạng PDF hoặc hình ảnh."
+    },
+    "th": {
+      "name": "สแกนเนอร์",
+      "summary": "เปลี่ยนรูปถ่ายกระดาษให้เป็นเอกสารที่ตรงและสะอาด แล้วส่งเป็น PDF หรือรูปภาพ"
+    },
+    "ja": {
+      "name": "スキャナー",
+      "summary": "紙を撮った写真をまっすぐできれいな書類にして、PDF や画像として送れます。"
+    },
+    "ko": {
+      "name": "스캐너",
+      "summary": "종이를 찍은 사진을 반듯하고 깨끗한 문서로 만들어 PDF나 이미지로 보냅니다."
+    },
+    "zh-CN": {
+      "name": "扫描仪",
+      "summary": "把纸张的照片变成端正、干净的文档，并以 PDF 或图片发送。"
+    },
+    "zh-TW": {
+      "name": "掃描器",
+      "summary": "把紙張的照片變成端正、乾淨的文件，並以 PDF 或圖片傳送。"
+    }
+  }
+}
