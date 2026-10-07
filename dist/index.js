@@ -270,27 +270,27 @@ function stamp() {
 // ---- Texts, in the app's languages --------------------------------------------------------------
 
 export const TEXTS = {
-  en: { pick: "Pick a photo", corners: "Drag the corners to the edges of the paper", scan: "Straighten", clean: "Document: black on white", keep: "Add this page", image: "Send as a picture", pdf: "Send the PDF", pages: "{n} pages", page: "1 page", cannot: "That picture cannot be read", drop: "Take out", again: "New photo" },
-  es: { pick: "Elegir una foto", corners: "Arrastra las esquinas a los bordes del papel", scan: "Enderezar", clean: "Documento: negro sobre blanco", keep: "Añadir esta página", image: "Enviar como imagen", pdf: "Enviar el PDF", pages: "{n} páginas", page: "1 página", cannot: "Esa imagen no se puede leer", drop: "Quitar", again: "Otra foto" },
-  pt: { pick: "Escolher uma foto", corners: "Arraste os cantos até às bordas do papel", scan: "Endireitar", clean: "Documento: preto sobre branco", keep: "Adicionar esta página", image: "Enviar como imagem", pdf: "Enviar o PDF", pages: "{n} páginas", page: "1 página", cannot: "Essa imagem não pode ser lida", drop: "Retirar", again: "Outra foto" },
-  fr: { pick: "Choisir une photo", corners: "Faites glisser les coins jusqu’aux bords du papier", scan: "Redresser", clean: "Document : noir sur blanc", keep: "Ajouter cette page", image: "Envoyer en image", pdf: "Envoyer le PDF", pages: "{n} pages", page: "1 page", cannot: "Cette image ne peut pas être lue", drop: "Retirer", again: "Autre photo" },
-  de: { pick: "Foto wählen", corners: "Zieh die Ecken an die Ränder des Blatts", scan: "Begradigen", clean: "Dokument: Schwarz auf Weiß", keep: "Diese Seite hinzufügen", image: "Als Bild senden", pdf: "PDF senden", pages: "{n} Seiten", page: "1 Seite", cannot: "Dieses Bild kann nicht gelesen werden", drop: "Entfernen", again: "Neues Foto" },
-  it: { pick: "Scegli una foto", corners: "Trascina gli angoli ai bordi del foglio", scan: "Raddrizza", clean: "Documento: nero su bianco", keep: "Aggiungi questa pagina", image: "Invia come immagine", pdf: "Invia il PDF", pages: "{n} pagine", page: "1 pagina", cannot: "Questa immagine non si può leggere", drop: "Togli", again: "Nuova foto" },
-  ro: { pick: "Alege o fotografie", corners: "Trage colțurile la marginile hârtiei", scan: "Îndreaptă", clean: "Document: negru pe alb", keep: "Adaugă această pagină", image: "Trimite ca imagine", pdf: "Trimite PDF-ul", pages: "{n} pagini", page: "1 pagină", cannot: "Imaginea nu poate fi citită", drop: "Scoate", again: "Altă fotografie" },
-  ru: { pick: "Выбрать фото", corners: "Перетащите углы к краям листа", scan: "Выровнять", clean: "Документ: чёрное на белом", keep: "Добавить эту страницу", image: "Отправить как изображение", pdf: "Отправить PDF", pages: "Страниц: {n}", page: "1 страница", cannot: "Это изображение не читается", drop: "Убрать", again: "Новое фото" },
-  uk: { pick: "Вибрати фото", corners: "Перетягніть кути до країв аркуша", scan: "Вирівняти", clean: "Документ: чорне на білому", keep: "Додати цю сторінку", image: "Надіслати як зображення", pdf: "Надіслати PDF", pages: "Сторінок: {n}", page: "1 сторінка", cannot: "Це зображення не читається", drop: "Прибрати", again: "Нове фото" },
-  pl: { pick: "Wybierz zdjęcie", corners: "Przeciągnij rogi do krawędzi kartki", scan: "Wyprostuj", clean: "Dokument: czarne na białym", keep: "Dodaj tę stronę", image: "Wyślij jako obraz", pdf: "Wyślij PDF", pages: "Stron: {n}", page: "1 strona", cannot: "Tego obrazu nie da się odczytać", drop: "Usuń", again: "Nowe zdjęcie" },
-  tr: { pick: "Fotoğraf seç", corners: "Köşeleri kâğıdın kenarlarına sürükle", scan: "Düzelt", clean: "Belge: beyaz üzerine siyah", keep: "Bu sayfayı ekle", image: "Görsel olarak gönder", pdf: "PDF’yi gönder", pages: "{n} sayfa", page: "1 sayfa", cannot: "Bu görsel okunamıyor", drop: "Çıkar", again: "Yeni fotoğraf" },
-  ar: { pick: "اختيار صورة", corners: "اسحب الزوايا إلى حواف الورقة", scan: "تقويم", clean: "مستند: أسود على أبيض", keep: "إضافة هذه الصفحة", image: "إرسال كصورة", pdf: "إرسال ملف PDF", pages: "{n} صفحات", page: "صفحة واحدة", cannot: "تعذّر قراءة هذه الصورة", drop: "إزالة", again: "صورة جديدة" },
-  hi: { pick: "फ़ोटो चुनें", corners: "कोनों को कागज़ के किनारों तक खींचें", scan: "सीधा करें", clean: "दस्तावेज़: सफ़ेद पर काला", keep: "यह पृष्ठ जोड़ें", image: "तस्वीर के रूप में भेजें", pdf: "PDF भेजें", pages: "{n} पृष्ठ", page: "1 पृष्ठ", cannot: "यह तस्वीर पढ़ी नहीं जा सकती", drop: "हटाएँ", again: "नई फ़ोटो" },
-  bn: { pick: "ছবি বাছুন", corners: "কোণগুলো কাগজের কিনারায় টেনে আনুন", scan: "সোজা করুন", clean: "নথি: সাদার উপর কালো", keep: "এই পৃষ্ঠা যোগ করুন", image: "ছবি হিসেবে পাঠান", pdf: "PDF পাঠান", pages: "{n} পৃষ্ঠা", page: "১ পৃষ্ঠা", cannot: "এই ছবি পড়া যাচ্ছে না", drop: "সরান", again: "নতুন ছবি" },
-  id: { pick: "Pilih foto", corners: "Seret sudut-sudut ke tepi kertas", scan: "Luruskan", clean: "Dokumen: hitam di atas putih", keep: "Tambahkan halaman ini", image: "Kirim sebagai gambar", pdf: "Kirim PDF", pages: "{n} halaman", page: "1 halaman", cannot: "Gambar itu tidak bisa dibaca", drop: "Keluarkan", again: "Foto baru" },
-  vi: { pick: "Chọn ảnh", corners: "Kéo các góc đến mép tờ giấy", scan: "Làm thẳng", clean: "Tài liệu: đen trên trắng", keep: "Thêm trang này", image: "Gửi dưới dạng ảnh", pdf: "Gửi PDF", pages: "{n} trang", page: "1 trang", cannot: "Không đọc được ảnh đó", drop: "Bỏ ra", again: "Ảnh mới" },
-  th: { pick: "เลือกรูปถ่าย", corners: "ลากมุมไปที่ขอบกระดาษ", scan: "ปรับให้ตรง", clean: "เอกสาร: ดำบนขาว", keep: "เพิ่มหน้านี้", image: "ส่งเป็นรูปภาพ", pdf: "ส่ง PDF", pages: "{n} หน้า", page: "1 หน้า", cannot: "อ่านรูปนี้ไม่ได้", drop: "นำออก", again: "รูปใหม่" },
-  ja: { pick: "写真を選ぶ", corners: "角を紙の端までドラッグ", scan: "まっすぐにする", clean: "書類：白地に黒", keep: "このページを追加", image: "画像として送信", pdf: "PDF を送信", pages: "{n} ページ", page: "1 ページ", cannot: "この画像は読み込めません", drop: "取り除く", again: "新しい写真" },
-  ko: { pick: "사진 선택", corners: "모서리를 종이 가장자리로 끌어다 놓으세요", scan: "반듯하게", clean: "문서: 흰 바탕에 검정", keep: "이 페이지 추가", image: "이미지로 보내기", pdf: "PDF 보내기", pages: "{n}페이지", page: "1페이지", cannot: "이 이미지를 읽을 수 없습니다", drop: "빼기", again: "새 사진" },
-  "zh-CN": { pick: "选择照片", corners: "把四角拖到纸张边缘", scan: "校正", clean: "文档：白底黑字", keep: "添加此页", image: "作为图片发送", pdf: "发送 PDF", pages: "{n} 页", page: "1 页", cannot: "无法读取该图片", drop: "移除", again: "新照片" },
-  "zh-TW": { pick: "選擇照片", corners: "把四角拖到紙張邊緣", scan: "校正", clean: "文件：白底黑字", keep: "加入此頁", image: "以圖片傳送", pdf: "傳送 PDF", pages: "{n} 頁", page: "1 頁", cannot: "無法讀取該圖片", drop: "移除", again: "新照片" },
+  en: { pick: "Pick a photo", camera: "Take a photo", corners: "Drag the corners to the edges of the paper", scan: "Straighten", clean: "Document: black on white", keep: "Add this page", image: "Send as a picture", pdf: "Send the PDF", pages: "{n} pages", page: "1 page", cannot: "That picture cannot be read", drop: "Take out", again: "New photo" },
+  es: { pick: "Elegir una foto", camera: "Hacer una foto", corners: "Arrastra las esquinas a los bordes del papel", scan: "Enderezar", clean: "Documento: negro sobre blanco", keep: "Añadir esta página", image: "Enviar como imagen", pdf: "Enviar el PDF", pages: "{n} páginas", page: "1 página", cannot: "Esa imagen no se puede leer", drop: "Quitar", again: "Otra foto" },
+  pt: { pick: "Escolher uma foto", camera: "Tirar uma foto", corners: "Arraste os cantos até às bordas do papel", scan: "Endireitar", clean: "Documento: preto sobre branco", keep: "Adicionar esta página", image: "Enviar como imagem", pdf: "Enviar o PDF", pages: "{n} páginas", page: "1 página", cannot: "Essa imagem não pode ser lida", drop: "Retirar", again: "Outra foto" },
+  fr: { pick: "Choisir une photo", camera: "Prendre une photo", corners: "Faites glisser les coins jusqu’aux bords du papier", scan: "Redresser", clean: "Document : noir sur blanc", keep: "Ajouter cette page", image: "Envoyer en image", pdf: "Envoyer le PDF", pages: "{n} pages", page: "1 page", cannot: "Cette image ne peut pas être lue", drop: "Retirer", again: "Autre photo" },
+  de: { pick: "Foto wählen", camera: "Foto aufnehmen", corners: "Zieh die Ecken an die Ränder des Blatts", scan: "Begradigen", clean: "Dokument: Schwarz auf Weiß", keep: "Diese Seite hinzufügen", image: "Als Bild senden", pdf: "PDF senden", pages: "{n} Seiten", page: "1 Seite", cannot: "Dieses Bild kann nicht gelesen werden", drop: "Entfernen", again: "Neues Foto" },
+  it: { pick: "Scegli una foto", camera: "Scatta una foto", corners: "Trascina gli angoli ai bordi del foglio", scan: "Raddrizza", clean: "Documento: nero su bianco", keep: "Aggiungi questa pagina", image: "Invia come immagine", pdf: "Invia il PDF", pages: "{n} pagine", page: "1 pagina", cannot: "Questa immagine non si può leggere", drop: "Togli", again: "Nuova foto" },
+  ro: { pick: "Alege o fotografie", camera: "Fă o fotografie", corners: "Trage colțurile la marginile hârtiei", scan: "Îndreaptă", clean: "Document: negru pe alb", keep: "Adaugă această pagină", image: "Trimite ca imagine", pdf: "Trimite PDF-ul", pages: "{n} pagini", page: "1 pagină", cannot: "Imaginea nu poate fi citită", drop: "Scoate", again: "Altă fotografie" },
+  ru: { pick: "Выбрать фото", camera: "Сделать фото", corners: "Перетащите углы к краям листа", scan: "Выровнять", clean: "Документ: чёрное на белом", keep: "Добавить эту страницу", image: "Отправить как изображение", pdf: "Отправить PDF", pages: "Страниц: {n}", page: "1 страница", cannot: "Это изображение не читается", drop: "Убрать", again: "Новое фото" },
+  uk: { pick: "Вибрати фото", camera: "Зробити фото", corners: "Перетягніть кути до країв аркуша", scan: "Вирівняти", clean: "Документ: чорне на білому", keep: "Додати цю сторінку", image: "Надіслати як зображення", pdf: "Надіслати PDF", pages: "Сторінок: {n}", page: "1 сторінка", cannot: "Це зображення не читається", drop: "Прибрати", again: "Нове фото" },
+  pl: { pick: "Wybierz zdjęcie", camera: "Zrób zdjęcie", corners: "Przeciągnij rogi do krawędzi kartki", scan: "Wyprostuj", clean: "Dokument: czarne na białym", keep: "Dodaj tę stronę", image: "Wyślij jako obraz", pdf: "Wyślij PDF", pages: "Stron: {n}", page: "1 strona", cannot: "Tego obrazu nie da się odczytać", drop: "Usuń", again: "Nowe zdjęcie" },
+  tr: { pick: "Fotoğraf seç", camera: "Fotoğraf çek", corners: "Köşeleri kâğıdın kenarlarına sürükle", scan: "Düzelt", clean: "Belge: beyaz üzerine siyah", keep: "Bu sayfayı ekle", image: "Görsel olarak gönder", pdf: "PDF’yi gönder", pages: "{n} sayfa", page: "1 sayfa", cannot: "Bu görsel okunamıyor", drop: "Çıkar", again: "Yeni fotoğraf" },
+  ar: { pick: "اختيار صورة", camera: "التقاط صورة", corners: "اسحب الزوايا إلى حواف الورقة", scan: "تقويم", clean: "مستند: أسود على أبيض", keep: "إضافة هذه الصفحة", image: "إرسال كصورة", pdf: "إرسال ملف PDF", pages: "{n} صفحات", page: "صفحة واحدة", cannot: "تعذّر قراءة هذه الصورة", drop: "إزالة", again: "صورة جديدة" },
+  hi: { pick: "फ़ोटो चुनें", camera: "फ़ोटो लें", corners: "कोनों को कागज़ के किनारों तक खींचें", scan: "सीधा करें", clean: "दस्तावेज़: सफ़ेद पर काला", keep: "यह पृष्ठ जोड़ें", image: "तस्वीर के रूप में भेजें", pdf: "PDF भेजें", pages: "{n} पृष्ठ", page: "1 पृष्ठ", cannot: "यह तस्वीर पढ़ी नहीं जा सकती", drop: "हटाएँ", again: "नई फ़ोटो" },
+  bn: { pick: "ছবি বাছুন", camera: "ছবি তুলুন", corners: "কোণগুলো কাগজের কিনারায় টেনে আনুন", scan: "সোজা করুন", clean: "নথি: সাদার উপর কালো", keep: "এই পৃষ্ঠা যোগ করুন", image: "ছবি হিসেবে পাঠান", pdf: "PDF পাঠান", pages: "{n} পৃষ্ঠা", page: "১ পৃষ্ঠা", cannot: "এই ছবি পড়া যাচ্ছে না", drop: "সরান", again: "নতুন ছবি" },
+  id: { pick: "Pilih foto", camera: "Ambil foto", corners: "Seret sudut-sudut ke tepi kertas", scan: "Luruskan", clean: "Dokumen: hitam di atas putih", keep: "Tambahkan halaman ini", image: "Kirim sebagai gambar", pdf: "Kirim PDF", pages: "{n} halaman", page: "1 halaman", cannot: "Gambar itu tidak bisa dibaca", drop: "Keluarkan", again: "Foto baru" },
+  vi: { pick: "Chọn ảnh", camera: "Chụp ảnh", corners: "Kéo các góc đến mép tờ giấy", scan: "Làm thẳng", clean: "Tài liệu: đen trên trắng", keep: "Thêm trang này", image: "Gửi dưới dạng ảnh", pdf: "Gửi PDF", pages: "{n} trang", page: "1 trang", cannot: "Không đọc được ảnh đó", drop: "Bỏ ra", again: "Ảnh mới" },
+  th: { pick: "เลือกรูปถ่าย", camera: "ถ่ายรูป", corners: "ลากมุมไปที่ขอบกระดาษ", scan: "ปรับให้ตรง", clean: "เอกสาร: ดำบนขาว", keep: "เพิ่มหน้านี้", image: "ส่งเป็นรูปภาพ", pdf: "ส่ง PDF", pages: "{n} หน้า", page: "1 หน้า", cannot: "อ่านรูปนี้ไม่ได้", drop: "นำออก", again: "รูปใหม่" },
+  ja: { pick: "写真を選ぶ", camera: "写真を撮る", corners: "角を紙の端までドラッグ", scan: "まっすぐにする", clean: "書類：白地に黒", keep: "このページを追加", image: "画像として送信", pdf: "PDF を送信", pages: "{n} ページ", page: "1 ページ", cannot: "この画像は読み込めません", drop: "取り除く", again: "新しい写真" },
+  ko: { pick: "사진 선택", camera: "사진 찍기", corners: "모서리를 종이 가장자리로 끌어다 놓으세요", scan: "반듯하게", clean: "문서: 흰 바탕에 검정", keep: "이 페이지 추가", image: "이미지로 보내기", pdf: "PDF 보내기", pages: "{n}페이지", page: "1페이지", cannot: "이 이미지를 읽을 수 없습니다", drop: "빼기", again: "새 사진" },
+  "zh-CN": { pick: "选择照片", camera: "拍照", corners: "把四角拖到纸张边缘", scan: "校正", clean: "文档：白底黑字", keep: "添加此页", image: "作为图片发送", pdf: "发送 PDF", pages: "{n} 页", page: "1 页", cannot: "无法读取该图片", drop: "移除", again: "新照片" },
+  "zh-TW": { pick: "選擇照片", camera: "拍照", corners: "把四角拖到紙張邊緣", scan: "校正", clean: "文件：白底黑字", keep: "加入此頁", image: "以圖片傳送", pdf: "傳送 PDF", pages: "{n} 頁", page: "1 頁", cannot: "無法讀取該圖片", drop: "移除", again: "新照片" },
 };
 
 /** A text in the language, or in English; `{n}` filled in. */
@@ -314,6 +314,9 @@ button.on { opacity: 1; background: currentColor; }
 button.on .i { background: var(--paper); }
 .i { display: block; width: 22px; height: 22px; margin: auto; background: currentColor; -webkit-mask: var(--i) center/contain no-repeat; mask: var(--i) center/contain no-repeat; }
 .grow { flex: 1; }
+.choices { display: flex; justify-content: center; gap: 16px; padding: 32px 0; }
+.choices button { width: 96px; height: 96px; border-radius: 20px; }
+.choices .i { width: 44px; height: 44px; }
 .note { font-size: 12px; opacity: .6; margin: 0 0 8px; }
 .stage { position: relative; display: inline-block; max-width: 100%; touch-action: none; }
 .stage canvas { display: block; max-width: 100%; border-radius: 8px; }
@@ -352,12 +355,26 @@ class Scanner extends HTMLElement {
       this.lang = opening?.lang || "en";
       this.paint();
       if (opening?.file?.data) this.load(opening.file);
-      else if (!this.source && !this.pages.length) this.ask();
+      // With the camera there, the user chooses camera or gallery on the empty screen; without it
+      // (an app before 1.4.1), the gallery opens at once, as it always did.
+      else if (!this.source && !this.pages.length && !this.camera) this.ask();
     });
   }
 
   T(key, vars) {
     return t(this.lang, key, vars);
+  }
+
+  /** Whether the app can open the phone's camera app for the plugin (app 1.4.1 and later). */
+  get camera() {
+    return typeof globalThis.ft?.takePhoto === "function";
+  }
+
+  /** A photo taken now with the phone's camera app, loaded like a picked one; nothing if the
+   *  user backed out. */
+  async shoot() {
+    const photo = await globalThis.ft.takePhoto();
+    if (photo) await this.load(photo);
   }
 
   async ask() {
@@ -505,6 +522,7 @@ class Scanner extends HTMLElement {
     this.root.innerHTML = `
       <style>${STYLE}</style>
       <div class="bar">
+        ${this.camera ? `<button data-act="camera" aria-label="${escape(T("camera"))}"><i class="i" style="--i:url(./icon/camera-outline.svg)"></i></button>` : ""}
         <button data-act="pick" aria-label="${escape(T(shown ? "again" : "pick"))}"><i class="i" style="--i:url(./icon/image-outline.svg)"></i></button>
         <button data-act="scan" aria-label="${escape(T("scan"))}" ${this.source && !this.result ? "" : "disabled"}><i class="i" style="--i:url(./icon/crop-outline.svg)"></i></button>
         <button data-act="clean" class="${this.clean ? "on" : ""}" aria-label="${escape(T("clean"))}" aria-pressed="${this.clean}"><i class="i" style="--i:url(./icon/document-text-outline.svg)"></i></button>
@@ -514,6 +532,7 @@ class Scanner extends HTMLElement {
         <button data-act="pdf" aria-label="${escape(T("pdf"))}" ${count ? "" : "disabled"}><i class="i" style="--i:url(./icon/send-outline.svg)"></i></button>
       </div>
       <p class="note" ${this.note ? "" : "hidden"}>${escape(this.note ?? "")}</p>
+      ${this.camera && !shown && !this.pages.length ? `<div class="choices"><button data-act="camera" aria-label="${escape(T("camera"))}"><i class="i" style="--i:url(./icon/camera-outline.svg)"></i></button><button data-act="pick" aria-label="${escape(T("pick"))}"><i class="i" style="--i:url(./icon/image-outline.svg)"></i></button></div>` : ""}
       ${shown ? '<div class="stage"><canvas></canvas><svg><polygon points=""></polygon></svg>' + (this.result ? "" : [0, 1, 2, 3].map((i) => `<button class="handle" data-corner="${i}" aria-label="${escape(T("corners"))}"></button>`).join("")) + "</div>" : ""}
       <ol>${this.pages.map((page, at) => `<li><img alt="" src="${page.canvas.toDataURL("image/jpeg", 0.6)}"><span class="name">${at + 1}. ${escape(page.name)}</span><button data-act="drop" data-at="${at}" aria-label="${escape(T("drop"))}"><i class="i" style="--i:url(./icon/trash-outline.svg)"></i></button></li>`).join("")}</ol>
       <p class="note" ${count ? "" : "hidden"}>${count === 1 ? escape(T("page")) : escape(T("pages", { n: count }))}</p>
@@ -536,17 +555,21 @@ class Scanner extends HTMLElement {
         this.stage.querySelector("svg").style.display = "none";
       }
     }
-    this.root.querySelector(".bar").onclick = (event) => {
+    const onAct = (event) => {
       const button = event.target.closest("button");
       if (!button) return;
       const { act } = button.dataset;
-      if (act === "pick") this.again();
+      if (act === "camera") this.shoot();
+      else if (act === "pick") this.again();
       else if (act === "scan") this.straighten();
       else if (act === "clean") this.toggleClean();
       else if (act === "keep") this.keep();
       else if (act === "image") this.sendImage();
       else if (act === "pdf") this.sendPdf();
     };
+    this.root.querySelector(".bar").onclick = onAct;
+    const choices = this.root.querySelector(".choices");
+    if (choices) choices.onclick = onAct;
     this.root.querySelector("ol").onclick = (event) => {
       const button = event.target.closest("button[data-act='drop']");
       if (button) this.drop(Number(button.dataset.at));

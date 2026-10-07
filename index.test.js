@@ -1,6 +1,6 @@
 // The plugin's own tests: the geometry, the cleaning and the PDF are all written here, with no
 // library and nothing from the network, so each one is checked on its own.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   TEXTS,
   a4Box,
@@ -65,6 +65,11 @@ describe("texts", () => {
       for (const key of keys) expect(table[key].trim(), `${code}.${key}`).toBeTruthy();
       expect(table.pages, code).toContain("{n}");
     }
+  });
+
+  it("name the camera in every language of the app", () => {
+    expect(t("en", "camera")).toBe("Take a photo");
+    expect(t("es", "camera")).toBe("Hacer una foto");
   });
 
   it("fall back to English for a language the app does not have, and fill the count in", () => {
@@ -345,6 +350,88 @@ describe("component", () => {
     expect(element.shadowRoot.querySelector('[data-act="clean"]').getAttribute("aria-pressed")).toBe("true");
     element.remove();
     delete globalThis.ft;
+  });
+
+  // 2026-10-06: from app 1.4.1 a plugin may ask for a photo straight from the phone's camera app.
+  // The button is there only when the app has it; an older app keeps the gallery alone.
+  const opened = (ft) => {
+    let open;
+    globalThis.ft = { onOpen: (handler) => (open = handler), send: () => {}, ...ft };
+    const element = document.createElement("ft-scanner");
+    document.body.append(element);
+    const loaded = [];
+    element.load = async (picked) => loaded.push(picked);
+    return { element, loaded, open: (opening) => open(opening), $: (selector) => element.shadowRoot.querySelector(selector) };
+  };
+  const done = () => {
+    document.querySelector("ft-scanner")?.remove();
+    delete globalThis.ft;
+  };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it("puts a camera button first in the bar, only on an app that can take a photo", () => {
+    const camera = opened({ pickFile: async () => null, takePhoto: async () => null });
+    const first = camera.$(".bar button");
+    expect(first.dataset.act).toBe("camera");
+    expect(first.getAttribute("aria-label")).toBe("Take a photo");
+    expect(first.querySelector(".i").getAttribute("style")).toContain("./icon/camera-outline.svg");
+    camera.open({ lang: "es" });
+    expect(camera.$('.bar [data-act="camera"]').getAttribute("aria-label")).toBe("Hacer una foto");
+    done();
+
+    const older = opened({ pickFile: async () => null });
+    expect(older.$('[data-act="camera"]')).toBe(null);
+    expect(older.$(".bar button").dataset.act).toBe("pick");
+    done();
+  });
+
+  it("loads the photo the camera took, as a picked one, and nothing when the user backs out", async () => {
+    const photo = { name: "photo.jpg", mime: "image/jpeg", data: "QUJD" };
+    const takePhoto = vi.fn(async () => photo);
+    const camera = opened({ pickFile: async () => null, takePhoto });
+    camera.$('.bar [data-act="camera"]').click();
+    await tick();
+    expect(takePhoto).toHaveBeenCalledTimes(1);
+    expect(camera.loaded).toEqual([photo]);
+
+    takePhoto.mockResolvedValueOnce(null);
+    camera.$('.bar [data-act="camera"]').click();
+    await tick();
+    expect(camera.loaded).toEqual([photo]);
+    done();
+  });
+
+  it("opens on the two choices, camera and gallery, instead of the gallery, when the app has the camera", async () => {
+    const photo = { name: "photo.jpg", mime: "image/jpeg", data: "QUJD" };
+    const pickFile = vi.fn(async () => null);
+    const takePhoto = vi.fn(async () => photo);
+    const camera = opened({ pickFile, takePhoto });
+    camera.open({ lang: "es" });
+    await tick();
+    expect(pickFile).not.toHaveBeenCalled();
+    expect(takePhoto).not.toHaveBeenCalled();
+    const choices = [...camera.element.shadowRoot.querySelectorAll(".choices button")];
+    expect(choices.map((button) => button.dataset.act)).toEqual(["camera", "pick"]);
+    expect(choices.map((button) => button.getAttribute("aria-label"))).toEqual(["Hacer una foto", "Elegir una foto"]);
+
+    camera.$('.choices [data-act="pick"]').click();
+    await tick();
+    expect(pickFile).toHaveBeenCalledWith("image/*");
+    camera.$('.choices [data-act="camera"]').click();
+    await tick();
+    expect(takePhoto).toHaveBeenCalledTimes(1);
+    expect(camera.loaded).toEqual([photo]);
+    done();
+  });
+
+  it("shows no choices on an app without the camera, which opens the gallery as before", async () => {
+    const pickFile = vi.fn(async () => null);
+    const older = opened({ pickFile });
+    older.open({ lang: "en" });
+    await tick();
+    expect(pickFile).toHaveBeenCalledWith("image/*");
+    expect(older.$(".choices")).toBe(null);
+    done();
   });
 
   it("says so when a picture cannot be read", async () => {

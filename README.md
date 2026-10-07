@@ -5,14 +5,17 @@ documento: se marcan las cuatro esquinas, el plugin endereza la perspectiva, lo 
 negro limpio si se quiere, y lo envía como PDF (una página por foto) o como imagen.
 
 Todo ocurre en el teléfono: el plugin no tiene red, no ve la conversación ni las claves, y solo
-recibe la foto que **el usuario** elige en el selector del sistema o le entrega con «Abrir con». El
+recibe la foto que **el usuario** hace con la cámara, elige en el selector del sistema o le
+entrega con «Abrir con». El
 enderezado es una homografía calculada aquí, sin ninguna biblioteca; el PDF se escribe byte a byte,
 como en [plugin-pdf](https://github.com/FlickerTalk/plugin-pdf). Lo que produce lo envía la app,
 nunca el plugin.
 
 ## Qué hace
 
-- **Elegir una foto**, o abrir una imagen del chat con «Abrir con» → Scanner.
+- **Hacer la foto con la cámara** o **elegir una foto**, o abrir una imagen del chat con «Abrir con» →
+  Scanner. Con la app 1.4.1 o posterior, al abrirlo se elige entre la cámara y la galería; en una
+  app anterior se abre la galería directamente, como antes.
 - **Cuatro esquinas** arrastrables sobre la foto; empiezan en un marco interior y se ajustan con el
   dedo. El documento resultante tiene el tamaño medio de los lados marcados, hasta 1600 px.
 - **Modo documento**: gris, el papel a blanco y la tinta a negro, con un umbral que sigue la luz
