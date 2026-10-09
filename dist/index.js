@@ -302,33 +302,36 @@ export function t(lang, key, vars = {}) {
 
 // ---- The component ------------------------------------------------------------------------------
 
+// Ionic draws the window (the app lends it to the frame, app 1.6.0); this is only what is the
+// tool's own: the picture with its corners, the two big choices and the list of pages. The colours
+// are the app's, through Ionic's variables, in light and dark.
 const STYLE = `
-:host { display: block; font: 14px system-ui, sans-serif; color: var(--ion-text-color, #111); --paper: var(--ion-background-color, #fff); --accent: var(--ion-color-primary, #0a7); }
-.bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 4px 0 10px; }
-button {
-  appearance: none; border: 1px solid currentColor; background: transparent; color: inherit;
-  border-radius: 10px; min-width: 44px; height: 40px; font-size: 18px; cursor: pointer; opacity: .75; padding: 0 10px;
-}
-button:disabled { opacity: .25; }
-button.on { opacity: 1; background: currentColor; }
-button.on .i { background: var(--paper); }
-.i { display: block; width: 22px; height: 22px; margin: auto; background: currentColor; -webkit-mask: var(--i) center/contain no-repeat; mask: var(--i) center/contain no-repeat; }
-.grow { flex: 1; }
-.choices { display: flex; justify-content: center; gap: 16px; padding: 32px 0; }
-.choices button { width: 96px; height: 96px; border-radius: 20px; }
-.choices .i { width: 44px; height: 44px; }
-.note { font-size: 12px; opacity: .6; margin: 0 0 8px; }
-.stage { position: relative; display: inline-block; max-width: 100%; touch-action: none; }
-.stage canvas { display: block; max-width: 100%; border-radius: 8px; }
-.stage svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.stage polygon { fill: rgba(0, 170, 120, .15); stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
-.handle { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 0; background: transparent; padding: 0; min-width: 0; opacity: 1; }
-.handle::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
-ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
-li { display: flex; align-items: center; gap: 8px; }
-li img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; background: #fff; }
-li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ft-scanner { display: flex; flex-direction: column; height: 100%; --accent: var(--ion-color-primary, #0a7); }
+ft-scanner ion-content { flex: 1; }
+ft-scanner .ft-i { display: block; width: 22px; height: 22px; background: currentColor; -webkit-mask: var(--i) center/contain no-repeat; mask: var(--i) center/contain no-repeat; }
+ft-scanner .choices { display: flex; justify-content: center; gap: 16px; padding: 32px 0; }
+ft-scanner .choices ion-button { width: 96px; height: 96px; --border-radius: 20px; }
+ft-scanner .choices .ft-i { width: 44px; height: 44px; }
+ft-scanner .choices ion-icon { font-size: 44px; }
+ft-scanner .note { font-size: 12px; color: var(--ion-color-medium, inherit); margin: 0 0 8px; }
+ft-scanner .stage { position: relative; display: inline-block; max-width: 100%; touch-action: none; }
+ft-scanner .stage canvas { display: block; max-width: 100%; border-radius: 8px; }
+ft-scanner .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+ft-scanner .stage polygon { fill: rgba(0, 170, 120, .15); stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+ft-scanner .handle { appearance: none; position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 0; background: transparent; padding: 0; }
+ft-scanner .handle::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+ft-scanner ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+ft-scanner li { display: flex; align-items: center; gap: 8px; }
+ft-scanner li img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; background: #fff; }
+ft-scanner li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 `;
+
+/** An Ionicon in a button: Ionic's own `ion-icon` when the app lent it by name, else the one the
+ *  app serves at `./icon/<name>.svg`, painted in the button's colour. Never a picture of ours. */
+const icon = (name) =>
+  globalThis.Ionicons?.map?.has(name)
+    ? `<ion-icon slot="icon-only" name="${name}" aria-hidden="true"></ion-icon>`
+    : `<i slot="icon-only" class="ft-i" style="--i:url(./icon/${name}.svg)" aria-hidden="true"></i>`;
 
 /** The longest side the picture is worked on: more only makes it slow and heavy. */
 const WORK_PIXELS = 1600;
@@ -338,7 +341,6 @@ const VIEW_PIXELS = 1024;
 class Scanner extends HTMLElement {
   constructor() {
     super();
-    this.root = this.attachShadow({ mode: "open" });
     this.lang = "en";
     this.source = null;
     this.quad = null;
@@ -515,29 +517,76 @@ class Scanner extends HTMLElement {
 
   // ---- What is on the screen ----------------------------------------------------------------
 
+  /** The window, once: Ionic's header with the bar, and the page below it. In the page, not in a
+   *  shadow root: Ionic's global styles do not cross a shadow boundary. Drawing the bar again on
+   *  every change would make Ionic draw its buttons again, and they would flash. */
+  frame() {
+    if (this.page) return;
+    this.innerHTML = `
+      <style>${STYLE}</style>
+      <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start">
+          ${this.camera ? `<ion-button data-act="camera">${icon("camera-outline")}</ion-button>` : ""}
+          <ion-button data-act="pick">${icon("image-outline")}</ion-button>
+          <ion-button data-act="scan">${icon("crop-outline")}</ion-button>
+          <ion-button data-act="clean">${icon("document-text-outline")}</ion-button>
+          <ion-button data-act="keep">${icon("add-outline")}</ion-button>
+        </ion-buttons>
+        <ion-buttons slot="end">
+          <ion-button data-act="image">${icon("image-outline")}</ion-button>
+          <ion-button data-act="pdf">${icon("send-outline")}</ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+      </ion-header>
+      <ion-content class="ion-padding"></ion-content>
+    `;
+    this.page = this.querySelector("ion-content");
+    this.querySelector("ion-toolbar").onclick = (event) => this.onAct(event);
+  }
+
+  onAct(event) {
+    const button = event.target.closest("ion-button");
+    if (!button || button.disabled) return;
+    const { act } = button.dataset;
+    if (act === "camera") this.shoot();
+    else if (act === "pick") this.again();
+    else if (act === "scan") this.straighten();
+    else if (act === "clean") this.toggleClean();
+    else if (act === "keep") this.keep();
+    else if (act === "image") this.sendImage();
+    else if (act === "pdf") this.sendPdf();
+  }
+
   paint() {
     const T = (key, vars) => this.T(key, vars);
     const shown = this.result ?? this.source;
     const count = this.pages.length + (this.result ? 1 : 0);
-    this.root.innerHTML = `
-      <style>${STYLE}</style>
-      <div class="bar">
-        ${this.camera ? `<button data-act="camera" aria-label="${escape(T("camera"))}"><i class="i" style="--i:url(./icon/camera-outline.svg)"></i></button>` : ""}
-        <button data-act="pick" aria-label="${escape(T(shown ? "again" : "pick"))}"><i class="i" style="--i:url(./icon/image-outline.svg)"></i></button>
-        <button data-act="scan" aria-label="${escape(T("scan"))}" ${this.source && !this.result ? "" : "disabled"}><i class="i" style="--i:url(./icon/crop-outline.svg)"></i></button>
-        <button data-act="clean" class="${this.clean ? "on" : ""}" aria-label="${escape(T("clean"))}" aria-pressed="${this.clean}"><i class="i" style="--i:url(./icon/document-text-outline.svg)"></i></button>
-        <button data-act="keep" aria-label="${escape(T("keep"))}" ${this.result ? "" : "disabled"}><i class="i" style="--i:url(./icon/add-outline.svg)"></i></button>
-        <span class="grow"></span>
-        <button data-act="image" aria-label="${escape(T("image"))}" ${this.result || this.pages.length ? "" : "disabled"}><i class="i" style="--i:url(./icon/image-outline.svg)"></i></button>
-        <button data-act="pdf" aria-label="${escape(T("pdf"))}" ${count ? "" : "disabled"}><i class="i" style="--i:url(./icon/send-outline.svg)"></i></button>
-      </div>
+    this.frame();
+    const bar = (act, label, enabled = true) => {
+      const button = this.querySelector(`ion-toolbar [data-act="${act}"]`);
+      if (!button) return;
+      button.setAttribute("aria-label", label);
+      button.disabled = !enabled;
+    };
+    bar("camera", T("camera"));
+    bar("pick", T(shown ? "again" : "pick"));
+    bar("scan", T("scan"), Boolean(this.source && !this.result));
+    bar("clean", T("clean"));
+    bar("keep", T("keep"), Boolean(this.result));
+    bar("image", T("image"), Boolean(this.result || this.pages.length));
+    bar("pdf", T("pdf"), Boolean(count));
+    const clean = this.querySelector('ion-toolbar [data-act="clean"]');
+    clean.fill = this.clean ? "solid" : undefined;
+    clean.setAttribute("aria-pressed", String(this.clean));
+    this.page.innerHTML = `
       <p class="note" ${this.note ? "" : "hidden"}>${escape(this.note ?? "")}</p>
-      ${this.camera && !shown && !this.pages.length ? `<div class="choices"><button data-act="camera" aria-label="${escape(T("camera"))}"><i class="i" style="--i:url(./icon/camera-outline.svg)"></i></button><button data-act="pick" aria-label="${escape(T("pick"))}"><i class="i" style="--i:url(./icon/image-outline.svg)"></i></button></div>` : ""}
+      ${this.camera && !shown && !this.pages.length ? `<div class="choices"><ion-button fill="outline" data-act="camera" aria-label="${escape(T("camera"))}">${icon("camera-outline")}</ion-button><ion-button fill="outline" data-act="pick" aria-label="${escape(T("pick"))}">${icon("image-outline")}</ion-button></div>` : ""}
       ${shown ? '<div class="stage"><canvas></canvas><svg><polygon points=""></polygon></svg>' + (this.result ? "" : [0, 1, 2, 3].map((i) => `<button class="handle" data-corner="${i}" aria-label="${escape(T("corners"))}"></button>`).join("")) + "</div>" : ""}
-      <ol>${this.pages.map((page, at) => `<li><img alt="" src="${page.canvas.toDataURL("image/jpeg", 0.6)}"><span class="name">${at + 1}. ${escape(page.name)}</span><button data-act="drop" data-at="${at}" aria-label="${escape(T("drop"))}"><i class="i" style="--i:url(./icon/trash-outline.svg)"></i></button></li>`).join("")}</ol>
+      <ol>${this.pages.map((page, at) => `<li><img alt="" src="${page.canvas.toDataURL("image/jpeg", 0.6)}"><span class="name">${at + 1}. ${escape(page.name)}</span><ion-button fill="clear" data-act="drop" data-at="${at}" aria-label="${escape(T("drop"))}">${icon("trash-outline")}</ion-button></li>`).join("")}</ol>
       <p class="note" ${count ? "" : "hidden"}>${count === 1 ? escape(T("page")) : escape(T("pages", { n: count }))}</p>
     `;
-    this.stage = this.root.querySelector(".stage");
+    this.stage = this.page.querySelector(".stage");
     if (shown && this.stage) {
       const canvas = this.stage.querySelector("canvas");
       const view = fit(shown.width, shown.height, VIEW_PIXELS);
@@ -555,23 +604,10 @@ class Scanner extends HTMLElement {
         this.stage.querySelector("svg").style.display = "none";
       }
     }
-    const onAct = (event) => {
-      const button = event.target.closest("button");
-      if (!button) return;
-      const { act } = button.dataset;
-      if (act === "camera") this.shoot();
-      else if (act === "pick") this.again();
-      else if (act === "scan") this.straighten();
-      else if (act === "clean") this.toggleClean();
-      else if (act === "keep") this.keep();
-      else if (act === "image") this.sendImage();
-      else if (act === "pdf") this.sendPdf();
-    };
-    this.root.querySelector(".bar").onclick = onAct;
-    const choices = this.root.querySelector(".choices");
-    if (choices) choices.onclick = onAct;
-    this.root.querySelector("ol").onclick = (event) => {
-      const button = event.target.closest("button[data-act='drop']");
+    const choices = this.page.querySelector(".choices");
+    if (choices) choices.onclick = (event) => this.onAct(event);
+    this.page.querySelector("ol").onclick = (event) => {
+      const button = event.target.closest("ion-button[data-act='drop']");
       if (button) this.drop(Number(button.dataset.at));
     };
   }
