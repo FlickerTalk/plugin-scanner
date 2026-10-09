@@ -1,8 +1,8 @@
 // The plugin's own tests: the geometry, the cleaning and the PDF are all written here, with no
 // library and nothing from the network, so each one is checked on its own.
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   TEXTS,
   a4Box,
@@ -323,6 +323,10 @@ describe("PDF", () => {
 });
 
 describe("component", () => {
+  // The tool draws in the page (Ionic's styles do not cross a shadow root), and Ionic moves a
+  // button's first aria attributes to the native button inside it once it has drawn.
+  const aria = (element, name) => element.getAttribute(name) ?? element.shadowRoot?.querySelector("button")?.getAttribute(name);
+
   it("is a custom element the frame can show", () => {
     expect(customElements.get("ft-scanner")).toBeTruthy();
   });
@@ -342,14 +346,14 @@ describe("component", () => {
     };
     const element = document.createElement("ft-scanner");
     document.body.append(element);
-    expect(element.shadowRoot.querySelector('[data-act="pick"]').getAttribute("aria-label")).toBe("Pick a photo");
+    expect(aria(element.querySelector('[data-act="pick"]'), "aria-label")).toBe("Pick a photo");
     open({ lang: "es", dark: false });
     await Promise.resolve();
     expect(calls).toEqual(["image/*"]);
-    expect(element.shadowRoot.querySelector('[data-act="scan"]').getAttribute("aria-label")).toBe("Enderezar");
-    expect(element.shadowRoot.querySelector('[data-act="scan"]').disabled).toBe(true);
-    expect(element.shadowRoot.querySelector('[data-act="pdf"]').disabled).toBe(true);
-    expect(element.shadowRoot.querySelector('[data-act="clean"]').getAttribute("aria-pressed")).toBe("true");
+    expect(aria(element.querySelector('[data-act="scan"]'), "aria-label")).toBe("Enderezar");
+    expect(element.querySelector('[data-act="scan"]').disabled).toBe(true);
+    expect(element.querySelector('[data-act="pdf"]').disabled).toBe(true);
+    expect(aria(element.querySelector('[data-act="clean"]'), "aria-pressed")).toBe("true");
     element.remove();
     delete globalThis.ft;
   });
@@ -363,7 +367,7 @@ describe("component", () => {
     document.body.append(element);
     const loaded = [];
     element.load = async (picked) => loaded.push(picked);
-    return { element, loaded, open: (opening) => open(opening), $: (selector) => element.shadowRoot.querySelector(selector) };
+    return { element, loaded, open: (opening) => open(opening), $: (selector) => element.querySelector(selector) };
   };
   const done = () => {
     document.querySelector("ft-scanner")?.remove();
@@ -373,17 +377,17 @@ describe("component", () => {
 
   it("puts a camera button first in the bar, only on an app that can take a photo", () => {
     const camera = opened({ pickFile: async () => null, takePhoto: async () => null });
-    const first = camera.$(".bar button");
+    const first = camera.$("ion-toolbar ion-button");
     expect(first.dataset.act).toBe("camera");
-    expect(first.getAttribute("aria-label")).toBe("Take a photo");
-    expect(first.querySelector(".i").getAttribute("style")).toContain("./icon/camera-outline.svg");
+    expect(aria(first, "aria-label")).toBe("Take a photo");
+    expect(first.querySelector('[slot="icon-only"]').getAttribute("style")).toContain("./icon/camera-outline.svg");
     camera.open({ lang: "es" });
-    expect(camera.$('.bar [data-act="camera"]').getAttribute("aria-label")).toBe("Hacer una foto");
+    expect(aria(camera.$('ion-toolbar [data-act="camera"]'), "aria-label")).toBe("Hacer una foto");
     done();
 
     const older = opened({ pickFile: async () => null });
     expect(older.$('[data-act="camera"]')).toBe(null);
-    expect(older.$(".bar button").dataset.act).toBe("pick");
+    expect(older.$("ion-toolbar ion-button").dataset.act).toBe("pick");
     done();
   });
 
@@ -391,13 +395,13 @@ describe("component", () => {
     const photo = { name: "photo.jpg", mime: "image/jpeg", data: "QUJD" };
     const takePhoto = vi.fn(async () => photo);
     const camera = opened({ pickFile: async () => null, takePhoto });
-    camera.$('.bar [data-act="camera"]').click();
+    camera.$('ion-toolbar [data-act="camera"]').click();
     await tick();
     expect(takePhoto).toHaveBeenCalledTimes(1);
     expect(camera.loaded).toEqual([photo]);
 
     takePhoto.mockResolvedValueOnce(null);
-    camera.$('.bar [data-act="camera"]').click();
+    camera.$('ion-toolbar [data-act="camera"]').click();
     await tick();
     expect(camera.loaded).toEqual([photo]);
     done();
@@ -412,9 +416,9 @@ describe("component", () => {
     await tick();
     expect(pickFile).not.toHaveBeenCalled();
     expect(takePhoto).not.toHaveBeenCalled();
-    const choices = [...camera.element.shadowRoot.querySelectorAll(".choices button")];
+    const choices = [...camera.element.querySelectorAll(".choices ion-button")];
     expect(choices.map((button) => button.dataset.act)).toEqual(["camera", "pick"]);
-    expect(choices.map((button) => button.getAttribute("aria-label"))).toEqual(["Hacer una foto", "Elegir una foto"]);
+    expect(choices.map((button) => aria(button, "aria-label"))).toEqual(["Hacer una foto", "Elegir una foto"]);
 
     camera.$('.choices [data-act="pick"]').click();
     await tick();
@@ -443,9 +447,114 @@ describe("component", () => {
     document.body.append(element);
     open({ lang: "fr", file: { name: "x.jpg", mime: "image/jpeg", data: "bm90LWEtcGljdHVyZQ==" } });
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(element.shadowRoot.querySelector(".note:not([hidden])")?.textContent).toBe("Cette image ne peut pas être lue");
+    expect(element.querySelector(".note:not([hidden])")?.textContent).toBe("Cette image ne peut pas être lue");
     element.remove();
     delete globalThis.ft;
+  });
+});
+
+describe("with the Ionic the app lends", () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const aria = (button, name) => button.getAttribute(name) ?? button.shadowRoot?.querySelector("button")?.getAttribute(name);
+  const mount = async (ft = {}) => {
+    globalThis.ft = { onOpen() {}, pickFile: async () => null, send: () => {}, ...ft };
+    document.body.innerHTML = "";
+    const element = document.createElement("ft-scanner");
+    document.body.append(element);
+    await tick();
+    return element;
+  };
+  /** A page already straightened, as `keep` leaves it. */
+  const kept = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 4;
+    canvas.height = 4;
+    return { canvas, name: "a.jpg" };
+  };
+
+  afterEach(() => {
+    delete globalThis.Ionicons;
+    delete globalThis.ft;
+    document.body.innerHTML = "";
+  });
+
+  // Only an app that lends Ionic can show it (app 1.6.0): an older one keeps the version it has.
+  it("asks for an app that lends Ionic", () => {
+    expect(manifest.minCoreVersion).toBe("1.6.0");
+  });
+
+  it("draws in the page, not in a shadow root, with the bar in ion-header and the rest in ion-content", async () => {
+    const element = await mount({ takePhoto: async () => null });
+    expect(element.shadowRoot).toBe(null);
+    expect(element.querySelector(":scope > ion-header > ion-toolbar")).toBeTruthy();
+    expect(element.querySelector(":scope > ion-content .choices")).toBeTruthy();
+    const acts = [...element.querySelectorAll("ion-toolbar ion-button")].map((button) => button.dataset.act);
+    expect(acts).toEqual(["camera", "pick", "scan", "clean", "keep", "image", "pdf"]);
+    for (const button of element.querySelectorAll("ion-toolbar ion-button")) expect(aria(button, "aria-label"), button.dataset.act).toBeTruthy();
+    // The corner handles are drag handles over the picture, not actions: the only plain buttons.
+    expect(element.querySelector("button:not(.handle)")).toBe(null);
+  });
+
+  // Ionic draws a button once; drawing the bar again on every change would flash it.
+  it("draws the bar once and keeps it while the page below changes", async () => {
+    const element = await mount();
+    const bar = element.querySelector("ion-toolbar");
+    const pdf = element.querySelector('ion-toolbar [data-act="pdf"]');
+    expect(pdf.disabled).toBe(true);
+    element.pages.push(kept());
+    element.paint();
+    expect(element.querySelector("ion-toolbar")).toBe(bar);
+    expect(element.querySelector('ion-toolbar [data-act="pdf"]')).toBe(pdf);
+    expect(pdf.disabled).toBe(false);
+    expect(element.querySelectorAll(":scope > ion-content ol li")).toHaveLength(1);
+  });
+
+  it("shows cleaning as a pressed button, and takes a page out with the Ionic button of its row", async () => {
+    const element = await mount();
+    const clean = element.querySelector('ion-toolbar [data-act="clean"]');
+    expect(clean.fill).toBe("solid");
+    clean.click();
+    await tick();
+    expect(aria(clean, "aria-pressed")).toBe("false");
+    expect(clean.fill).toBe(undefined);
+
+    element.pages.push(kept(), kept());
+    element.paint();
+    const drop = element.querySelector('ol ion-button[data-act="drop"]');
+    expect(aria(drop, "aria-label")).toBeTruthy();
+    drop.click();
+    expect(element.pages).toHaveLength(1);
+  });
+
+  // The icons are the app's: Ionic's own when the app lent them by name, else the ones it serves.
+  it("draws an Ionicon the app lent by name with ion-icon, and the one it serves otherwise", async () => {
+    let element = await mount();
+    expect(element.querySelector('[data-act="pick"] ion-icon')).toBe(null);
+    expect(element.querySelector('[data-act="pick"] [slot="icon-only"]').getAttribute("style")).toContain("./icon/image-outline.svg");
+
+    globalThis.Ionicons = { map: new Map([["image-outline", "data:image/svg+xml;utf8,<svg></svg>"]]) };
+    element = await mount();
+    expect(element.querySelector('[data-act="pick"] ion-icon[slot="icon-only"]').getAttribute("name")).toBe("image-outline");
+  });
+});
+
+describe("the package", () => {
+  const dist = join(import.meta.dirname, "dist");
+  const files = readdirSync(dist);
+
+  // Ionic is the app's, lent to the frame: a copy in the package would be a second one, and heavy.
+  it("carries no Ionic of its own", () => {
+    for (const file of files) {
+      const code = readFileSync(join(dist, file), "utf8");
+      expect(code, file).not.toMatch(/@ionic\/core|ionicframework|stencil|defineCustomElement|__registerHost/i);
+      expect(code, file).not.toMatch(/^\s*import\s.*from\s+["'](?!\.\/)/m);
+    }
+  });
+
+  // The app carries it as a seed on iOS: 128 KiB at most (plugin-sdk).
+  it("is small enough to be a seed", () => {
+    const bytes = files.reduce((sum, file) => sum + statSync(join(dist, file)).size, 0);
+    expect(bytes).toBeLessThanOrEqual(128 * 1024);
   });
 });
 

@@ -1,13 +1,14 @@
 {
   "name": "@flickertalk/plugin-scanner",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.3",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "test": "vitest run"
   },
   "devDependencies": {
+    "@ionic/core": "9.0.4",
     "happy-dom": "^20.0.0",
     "vitest": "^5.0.1"
   }
