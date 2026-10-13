@@ -1,8 +1,9 @@
 // Scanner for FlickerTalk (Plan §53–§55): a photo of a paper becomes a straight, clean document.
 // The user marks the four corners, the plugin straightens the perspective (a homography computed
 // here, no library), cleans it in the mode the user picks (colour, greyscale, black and white),
-// and sends the pages as one PDF, or one page as a picture. Everything happens on this phone: no network, nothing of the chat, and only the file
-// the user picks through the app or hands over with "open with".
+// and sends the pages as one PDF, or one page as a picture. Everything happens on this phone: no
+// network, nothing of the chat, and only the file the user picks through the app or hands over
+// with "open with".
 
 // ---- Geometry -----------------------------------------------------------------------------------
 
