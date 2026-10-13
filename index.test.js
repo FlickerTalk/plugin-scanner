@@ -649,6 +649,45 @@ describe("with the Ionic the app lends", () => {
     expect(element.mode).toBe("grey");
   });
 
+  // Ionic 9.0.4 gives a segment button's aria-label to its native button once, when it first draws
+  // it, and never follows a change: the app's language comes later, with onOpen, so a screen reader
+  // read the modes in English. The modes are drawn again in the new language, and only then.
+  it("names the modes to a screen reader in the language the app opens it with, drawing them again only when it changes", async () => {
+    let open;
+    const element = await mount({ onOpen: (handler) => (open = handler) });
+    const native = () => [...element.querySelectorAll("ion-segment-button")].map((button) => button.shadowRoot?.querySelector("button")?.getAttribute("aria-label"));
+    expect(native()).toEqual(["Colour", "Greyscale", "Black and white"]);
+
+    open({ lang: "es" });
+    await tick();
+    expect(native()).toEqual(["Color", "Escala de grises", "Blanco y negro"]);
+    const modes = element.querySelector("ion-segment");
+    const buttons = [...modes.querySelectorAll("ion-segment-button")];
+    expect(modes.value).toBe("grey");
+    // Ionic still marks the chosen mode and the one after it, whose separator it hides on iOS.
+    const marks = buttons.map((button) => ["segment-button-checked", "segment-button-after-checked"].map((name) => button.classList.contains(name)));
+    expect(marks).toEqual([
+      [false, false],
+      [true, false],
+      [false, true],
+    ]);
+
+    // The same language again, or any other change: the same buttons.
+    open({ lang: "es" });
+    element.pages.push(kept());
+    element.paint();
+    await tick();
+    expect(element.querySelector("ion-segment")).toBe(modes);
+    const again = [...element.querySelectorAll("ion-segment-button")];
+    expect(again.every((button, at) => button === buttons[at])).toBe(true);
+
+    // And a tap still changes the mode.
+    buttons[2].click();
+    await tick();
+    expect(element.mode).toBe("bw");
+    expect(modes.value).toBe("bw");
+  });
+
   it("takes a page out with the Ionic button of its row", async () => {
     const element = await mount();
 
