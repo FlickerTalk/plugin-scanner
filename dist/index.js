@@ -1,8 +1,9 @@
 // Scanner for FlickerTalk (Plan §53–§55): a photo of a paper becomes a straight, clean document.
 // The user marks the four corners, the plugin straightens the perspective (a homography computed
-// here, no library), cleans the page if asked, and sends the pages as one PDF, or one page as a
-// picture. Everything happens on this phone: no network, nothing of the chat, and only the file
-// the user picks through the app or hands over with "open with".
+// here, no library), cleans it in the mode the user picks (colour, greyscale, black and white),
+// and sends the pages as one PDF, or one page as a picture. Everything happens on this phone: no
+// network, nothing of the chat, and only the file the user picks through the app or hands over
+// with "open with".
 
 // ---- Geometry -----------------------------------------------------------------------------------
 
@@ -57,7 +58,7 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
  * bottom left): the mean of its opposite sides, scaled so the longest side is at most `max`, and
  * never under 8 pixels.
  */
-export function quadSize(quad, max = 1600) {
+export function quadSize(quad, max = WORK_PIXELS) {
   const [tl, tr, br, bl] = quad;
   let width = (distance(tl, tr) + distance(bl, br)) / 2;
   let height = (distance(tl, bl) + distance(tr, br)) / 2;
@@ -133,36 +134,105 @@ export function warp(source, quad, size) {
 }
 
 /**
- * The page as a document: grey, the paper pushed to white and the ink to black. The brightness of
- * the paper is read from the page itself (most of a page is paper, so a high percentile of its
- * greys), and the threshold follows it: a dim photo still comes out as paper, not as a stain.
+ * How bright the paper is under every pixel, read by zones (2026-10-13): the page's greys shrunk
+ * by 8 with box means, the brightest of every 5 × 5 zones (ink is thin, so the brightest of a zone
+ * is its paper), blurred twice with a box of 8 % of the width (close to a Gaussian, so the level
+ * changes smoothly), and stretched back to the page's size with bilinear interpolation. One grey
+ * per pixel. A shadow, a fold or a light from one side moves this level with it.
  */
-export function cleaned(page) {
+export function background(page) {
   const { width, height, data } = page;
-  const out = new Uint8ClampedArray(data.length);
-  const greys = new Uint8ClampedArray(width * height);
-  const histogram = new Uint32Array(256);
-  for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-    const grey = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
-    greys[p] = grey;
-    histogram[grey] += 1;
-  }
-  // The grey that 85 % of the pixels are at or under: the paper, on a page that is mostly paper.
-  let paper = 255;
-  for (let level = 0, seen = 0; level < 256; level += 1) {
-    seen += histogram[level];
-    if (seen >= greys.length * 0.85) {
-      paper = level;
-      break;
+  const sw = Math.min(width, Math.max(8, Math.ceil(width / 8)));
+  const sh = Math.min(height, Math.max(8, Math.ceil(height / 8)));
+  // Box means: every pixel adds its grey to the zone it falls in.
+  const zones = new Float64Array(sw * sh);
+  const counts = new Uint32Array(sw * sh);
+  const column = new Uint32Array(width);
+  for (let x = 0; x < width; x += 1) column[x] = Math.floor((x * sw) / width);
+  for (let y = 0, i = 0; y < height; y += 1) {
+    const row = Math.floor((y * sh) / height) * sw;
+    for (let x = 0; x < width; x += 1, i += 4) {
+      zones[row + column[x]] += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      counts[row + column[x]] += 1;
     }
   }
-  paper = Math.max(40, paper);
-  const white = paper * 0.8;
-  const black = paper * 0.35;
+  for (let zone = 0; zone < zones.length; zone += 1) zones[zone] /= counts[zone];
+  let grid = along(along(zones, sw, sh, 2, true, true), sw, sh, 2, false, true);
+  const radius = Math.max(1, Math.round(sw * 0.08));
+  for (let pass = 0; pass < 2; pass += 1) grid = along(along(grid, sw, sh, radius, true, false), sw, sh, radius, false, false);
+  // Back to the page's size: each pixel between the four zone centres around it.
+  const where = (at, size, small) => {
+    const s = Math.min(small - 1, Math.max(0, ((at + 0.5) * small) / size - 0.5));
+    const low = Math.floor(s);
+    return [low, Math.min(small - 1, low + 1), s - low];
+  };
+  const left = new Uint32Array(width);
+  const right = new Uint32Array(width);
+  const across = new Float64Array(width);
+  for (let x = 0; x < width; x += 1) [left[x], right[x], across[x]] = where(x, width, sw);
+  const level = new Uint8ClampedArray(width * height);
+  for (let y = 0, p = 0; y < height; y += 1) {
+    const [low, high, down] = where(y, height, sh);
+    const top = low * sw;
+    const bottom = high * sw;
+    for (let x = 0; x < width; x += 1, p += 1) {
+      const above = grid[top + left[x]] + (grid[top + right[x]] - grid[top + left[x]]) * across[x];
+      const below = grid[bottom + left[x]] + (grid[bottom + right[x]] - grid[bottom + left[x]]) * across[x];
+      level[p] = above + (below - above) * down;
+    }
+  }
+  return level;
+}
+
+/**
+ * One pass over a small grid, along its rows or along its columns: every value becomes the
+ * brightest (`max`) or the mean of the values within `radius` of it, the edge repeated past the
+ * edge. The mean runs as a sliding sum, so a pass costs the same whatever the radius.
+ */
+function along(values, width, height, radius, byRow, max) {
+  const out = new Float64Array(values.length);
+  const lines = byRow ? height : width;
+  const length = byRow ? width : height;
+  const step = byRow ? 1 : width;
+  for (let line = 0; line < lines; line += 1) {
+    const start = byRow ? line * width : line;
+    const at = (k) => values[start + Math.min(length - 1, Math.max(0, k)) * step];
+    let sum = 0;
+    for (let k = -radius; k <= radius; k += 1) sum += at(k);
+    for (let k = 0; k < length; k += 1) {
+      if (max) {
+        let best = at(k - radius);
+        for (let j = k - radius + 1; j <= k + radius; j += 1) best = Math.max(best, at(j));
+        out[start + k * step] = best;
+      } else {
+        out[start + k * step] = sum / (2 * radius + 1);
+        sum += at(k + radius + 1) - at(k - radius);
+      }
+    }
+  }
+  return out;
+}
+
+/** For each mode, the ratio of a pixel to its paper that turns black and the one that turns white. */
+const RAMPS = { grey: [0.4, 0.88], bw: [0.61, 0.69] };
+
+/**
+ * The page as the user asked for it (2026-10-13). `colour`: as it is. `grey`: the paper evened to
+ * white, the tones and a faint pencil kept. `bw`: pure black and white with a narrow soft edge, so
+ * the faint grid of a notebook goes and the ink stays. Each pixel is measured against the paper
+ * around it (`background`), not against one level for the whole page: a shadow is still paper, and
+ * a dim photo still comes out as paper, not as a stain.
+ */
+export function cleaned(page, mode = "grey") {
+  const ramp = RAMPS[mode];
+  if (!ramp) return page;
+  const [black, white] = ramp;
+  const { width, height, data } = page;
+  const paper = background(page);
+  const out = new Uint8ClampedArray(data.length);
   for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-    const grey = greys[p];
-    const value = grey >= white ? 255 : Math.max(0, Math.round(((grey - black) / (white - black)) * 255));
-    out[i] = out[i + 1] = out[i + 2] = value;
+    const ratio = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / Math.max(paper[p], 40);
+    out[i] = out[i + 1] = out[i + 2] = ((ratio - black) / (white - black)) * 255;
     out[i + 3] = 255;
   }
   return { width, height, data: out };
@@ -270,27 +340,27 @@ function stamp() {
 // ---- Texts, in the app's languages --------------------------------------------------------------
 
 export const TEXTS = {
-  en: { pick: "Pick a photo", camera: "Take a photo", corners: "Drag the corners to the edges of the paper", scan: "Straighten", clean: "Document: black on white", keep: "Add this page", image: "Send as a picture", pdf: "Send the PDF", pages: "{n} pages", page: "1 page", cannot: "That picture cannot be read", drop: "Take out", again: "New photo" },
-  es: { pick: "Elegir una foto", camera: "Hacer una foto", corners: "Arrastra las esquinas a los bordes del papel", scan: "Enderezar", clean: "Documento: negro sobre blanco", keep: "Añadir esta página", image: "Enviar como imagen", pdf: "Enviar el PDF", pages: "{n} páginas", page: "1 página", cannot: "Esa imagen no se puede leer", drop: "Quitar", again: "Otra foto" },
-  pt: { pick: "Escolher uma foto", camera: "Tirar uma foto", corners: "Arraste os cantos até às bordas do papel", scan: "Endireitar", clean: "Documento: preto sobre branco", keep: "Adicionar esta página", image: "Enviar como imagem", pdf: "Enviar o PDF", pages: "{n} páginas", page: "1 página", cannot: "Essa imagem não pode ser lida", drop: "Retirar", again: "Outra foto" },
-  fr: { pick: "Choisir une photo", camera: "Prendre une photo", corners: "Faites glisser les coins jusqu’aux bords du papier", scan: "Redresser", clean: "Document : noir sur blanc", keep: "Ajouter cette page", image: "Envoyer en image", pdf: "Envoyer le PDF", pages: "{n} pages", page: "1 page", cannot: "Cette image ne peut pas être lue", drop: "Retirer", again: "Autre photo" },
-  de: { pick: "Foto wählen", camera: "Foto aufnehmen", corners: "Zieh die Ecken an die Ränder des Blatts", scan: "Begradigen", clean: "Dokument: Schwarz auf Weiß", keep: "Diese Seite hinzufügen", image: "Als Bild senden", pdf: "PDF senden", pages: "{n} Seiten", page: "1 Seite", cannot: "Dieses Bild kann nicht gelesen werden", drop: "Entfernen", again: "Neues Foto" },
-  it: { pick: "Scegli una foto", camera: "Scatta una foto", corners: "Trascina gli angoli ai bordi del foglio", scan: "Raddrizza", clean: "Documento: nero su bianco", keep: "Aggiungi questa pagina", image: "Invia come immagine", pdf: "Invia il PDF", pages: "{n} pagine", page: "1 pagina", cannot: "Questa immagine non si può leggere", drop: "Togli", again: "Nuova foto" },
-  ro: { pick: "Alege o fotografie", camera: "Fă o fotografie", corners: "Trage colțurile la marginile hârtiei", scan: "Îndreaptă", clean: "Document: negru pe alb", keep: "Adaugă această pagină", image: "Trimite ca imagine", pdf: "Trimite PDF-ul", pages: "{n} pagini", page: "1 pagină", cannot: "Imaginea nu poate fi citită", drop: "Scoate", again: "Altă fotografie" },
-  ru: { pick: "Выбрать фото", camera: "Сделать фото", corners: "Перетащите углы к краям листа", scan: "Выровнять", clean: "Документ: чёрное на белом", keep: "Добавить эту страницу", image: "Отправить как изображение", pdf: "Отправить PDF", pages: "Страниц: {n}", page: "1 страница", cannot: "Это изображение не читается", drop: "Убрать", again: "Новое фото" },
-  uk: { pick: "Вибрати фото", camera: "Зробити фото", corners: "Перетягніть кути до країв аркуша", scan: "Вирівняти", clean: "Документ: чорне на білому", keep: "Додати цю сторінку", image: "Надіслати як зображення", pdf: "Надіслати PDF", pages: "Сторінок: {n}", page: "1 сторінка", cannot: "Це зображення не читається", drop: "Прибрати", again: "Нове фото" },
-  pl: { pick: "Wybierz zdjęcie", camera: "Zrób zdjęcie", corners: "Przeciągnij rogi do krawędzi kartki", scan: "Wyprostuj", clean: "Dokument: czarne na białym", keep: "Dodaj tę stronę", image: "Wyślij jako obraz", pdf: "Wyślij PDF", pages: "Stron: {n}", page: "1 strona", cannot: "Tego obrazu nie da się odczytać", drop: "Usuń", again: "Nowe zdjęcie" },
-  tr: { pick: "Fotoğraf seç", camera: "Fotoğraf çek", corners: "Köşeleri kâğıdın kenarlarına sürükle", scan: "Düzelt", clean: "Belge: beyaz üzerine siyah", keep: "Bu sayfayı ekle", image: "Görsel olarak gönder", pdf: "PDF’yi gönder", pages: "{n} sayfa", page: "1 sayfa", cannot: "Bu görsel okunamıyor", drop: "Çıkar", again: "Yeni fotoğraf" },
-  ar: { pick: "اختيار صورة", camera: "التقاط صورة", corners: "اسحب الزوايا إلى حواف الورقة", scan: "تقويم", clean: "مستند: أسود على أبيض", keep: "إضافة هذه الصفحة", image: "إرسال كصورة", pdf: "إرسال ملف PDF", pages: "{n} صفحات", page: "صفحة واحدة", cannot: "تعذّر قراءة هذه الصورة", drop: "إزالة", again: "صورة جديدة" },
-  hi: { pick: "फ़ोटो चुनें", camera: "फ़ोटो लें", corners: "कोनों को कागज़ के किनारों तक खींचें", scan: "सीधा करें", clean: "दस्तावेज़: सफ़ेद पर काला", keep: "यह पृष्ठ जोड़ें", image: "तस्वीर के रूप में भेजें", pdf: "PDF भेजें", pages: "{n} पृष्ठ", page: "1 पृष्ठ", cannot: "यह तस्वीर पढ़ी नहीं जा सकती", drop: "हटाएँ", again: "नई फ़ोटो" },
-  bn: { pick: "ছবি বাছুন", camera: "ছবি তুলুন", corners: "কোণগুলো কাগজের কিনারায় টেনে আনুন", scan: "সোজা করুন", clean: "নথি: সাদার উপর কালো", keep: "এই পৃষ্ঠা যোগ করুন", image: "ছবি হিসেবে পাঠান", pdf: "PDF পাঠান", pages: "{n} পৃষ্ঠা", page: "১ পৃষ্ঠা", cannot: "এই ছবি পড়া যাচ্ছে না", drop: "সরান", again: "নতুন ছবি" },
-  id: { pick: "Pilih foto", camera: "Ambil foto", corners: "Seret sudut-sudut ke tepi kertas", scan: "Luruskan", clean: "Dokumen: hitam di atas putih", keep: "Tambahkan halaman ini", image: "Kirim sebagai gambar", pdf: "Kirim PDF", pages: "{n} halaman", page: "1 halaman", cannot: "Gambar itu tidak bisa dibaca", drop: "Keluarkan", again: "Foto baru" },
-  vi: { pick: "Chọn ảnh", camera: "Chụp ảnh", corners: "Kéo các góc đến mép tờ giấy", scan: "Làm thẳng", clean: "Tài liệu: đen trên trắng", keep: "Thêm trang này", image: "Gửi dưới dạng ảnh", pdf: "Gửi PDF", pages: "{n} trang", page: "1 trang", cannot: "Không đọc được ảnh đó", drop: "Bỏ ra", again: "Ảnh mới" },
-  th: { pick: "เลือกรูปถ่าย", camera: "ถ่ายรูป", corners: "ลากมุมไปที่ขอบกระดาษ", scan: "ปรับให้ตรง", clean: "เอกสาร: ดำบนขาว", keep: "เพิ่มหน้านี้", image: "ส่งเป็นรูปภาพ", pdf: "ส่ง PDF", pages: "{n} หน้า", page: "1 หน้า", cannot: "อ่านรูปนี้ไม่ได้", drop: "นำออก", again: "รูปใหม่" },
-  ja: { pick: "写真を選ぶ", camera: "写真を撮る", corners: "角を紙の端までドラッグ", scan: "まっすぐにする", clean: "書類：白地に黒", keep: "このページを追加", image: "画像として送信", pdf: "PDF を送信", pages: "{n} ページ", page: "1 ページ", cannot: "この画像は読み込めません", drop: "取り除く", again: "新しい写真" },
-  ko: { pick: "사진 선택", camera: "사진 찍기", corners: "모서리를 종이 가장자리로 끌어다 놓으세요", scan: "반듯하게", clean: "문서: 흰 바탕에 검정", keep: "이 페이지 추가", image: "이미지로 보내기", pdf: "PDF 보내기", pages: "{n}페이지", page: "1페이지", cannot: "이 이미지를 읽을 수 없습니다", drop: "빼기", again: "새 사진" },
-  "zh-CN": { pick: "选择照片", camera: "拍照", corners: "把四角拖到纸张边缘", scan: "校正", clean: "文档：白底黑字", keep: "添加此页", image: "作为图片发送", pdf: "发送 PDF", pages: "{n} 页", page: "1 页", cannot: "无法读取该图片", drop: "移除", again: "新照片" },
-  "zh-TW": { pick: "選擇照片", camera: "拍照", corners: "把四角拖到紙張邊緣", scan: "校正", clean: "文件：白底黑字", keep: "加入此頁", image: "以圖片傳送", pdf: "傳送 PDF", pages: "{n} 頁", page: "1 頁", cannot: "無法讀取該圖片", drop: "移除", again: "新照片" },
+  en: { pick: "Pick a photo", camera: "Take a photo", corners: "Drag the corners to the edges of the paper", scan: "Straighten", colour: "Colour", grey: "Greyscale", bw: "Black and white", keep: "Add this page", image: "Send as a picture", pdf: "Send the PDF", pages: "{n} pages", page: "1 page", cannot: "That picture cannot be read", drop: "Take out", again: "New photo" },
+  es: { pick: "Elegir una foto", camera: "Hacer una foto", corners: "Arrastra las esquinas a los bordes del papel", scan: "Enderezar", colour: "Color", grey: "Escala de grises", bw: "Blanco y negro", keep: "Añadir esta página", image: "Enviar como imagen", pdf: "Enviar el PDF", pages: "{n} páginas", page: "1 página", cannot: "Esa imagen no se puede leer", drop: "Quitar", again: "Otra foto" },
+  pt: { pick: "Escolher uma foto", camera: "Tirar uma foto", corners: "Arraste os cantos até às bordas do papel", scan: "Endireitar", colour: "Cor", grey: "Escala de cinzentos", bw: "Preto e branco", keep: "Adicionar esta página", image: "Enviar como imagem", pdf: "Enviar o PDF", pages: "{n} páginas", page: "1 página", cannot: "Essa imagem não pode ser lida", drop: "Retirar", again: "Outra foto" },
+  fr: { pick: "Choisir une photo", camera: "Prendre une photo", corners: "Faites glisser les coins jusqu’aux bords du papier", scan: "Redresser", colour: "Couleur", grey: "Niveaux de gris", bw: "Noir et blanc", keep: "Ajouter cette page", image: "Envoyer en image", pdf: "Envoyer le PDF", pages: "{n} pages", page: "1 page", cannot: "Cette image ne peut pas être lue", drop: "Retirer", again: "Autre photo" },
+  de: { pick: "Foto wählen", camera: "Foto aufnehmen", corners: "Zieh die Ecken an die Ränder des Blatts", scan: "Begradigen", colour: "Farbe", grey: "Graustufen", bw: "Schwarzweiß", keep: "Diese Seite hinzufügen", image: "Als Bild senden", pdf: "PDF senden", pages: "{n} Seiten", page: "1 Seite", cannot: "Dieses Bild kann nicht gelesen werden", drop: "Entfernen", again: "Neues Foto" },
+  it: { pick: "Scegli una foto", camera: "Scatta una foto", corners: "Trascina gli angoli ai bordi del foglio", scan: "Raddrizza", colour: "Colore", grey: "Scala di grigi", bw: "Bianco e nero", keep: "Aggiungi questa pagina", image: "Invia come immagine", pdf: "Invia il PDF", pages: "{n} pagine", page: "1 pagina", cannot: "Questa immagine non si può leggere", drop: "Togli", again: "Nuova foto" },
+  ro: { pick: "Alege o fotografie", camera: "Fă o fotografie", corners: "Trage colțurile la marginile hârtiei", scan: "Îndreaptă", colour: "Color", grey: "Nuanțe de gri", bw: "Alb-negru", keep: "Adaugă această pagină", image: "Trimite ca imagine", pdf: "Trimite PDF-ul", pages: "{n} pagini", page: "1 pagină", cannot: "Imaginea nu poate fi citită", drop: "Scoate", again: "Altă fotografie" },
+  ru: { pick: "Выбрать фото", camera: "Сделать фото", corners: "Перетащите углы к краям листа", scan: "Выровнять", colour: "Цвет", grey: "Оттенки серого", bw: "Чёрно-белый", keep: "Добавить эту страницу", image: "Отправить как изображение", pdf: "Отправить PDF", pages: "Страниц: {n}", page: "1 страница", cannot: "Это изображение не читается", drop: "Убрать", again: "Новое фото" },
+  uk: { pick: "Вибрати фото", camera: "Зробити фото", corners: "Перетягніть кути до країв аркуша", scan: "Вирівняти", colour: "Колір", grey: "Відтінки сірого", bw: "Чорно-білий", keep: "Додати цю сторінку", image: "Надіслати як зображення", pdf: "Надіслати PDF", pages: "Сторінок: {n}", page: "1 сторінка", cannot: "Це зображення не читається", drop: "Прибрати", again: "Нове фото" },
+  pl: { pick: "Wybierz zdjęcie", camera: "Zrób zdjęcie", corners: "Przeciągnij rogi do krawędzi kartki", scan: "Wyprostuj", colour: "Kolor", grey: "Skala szarości", bw: "Czarno-białe", keep: "Dodaj tę stronę", image: "Wyślij jako obraz", pdf: "Wyślij PDF", pages: "Stron: {n}", page: "1 strona", cannot: "Tego obrazu nie da się odczytać", drop: "Usuń", again: "Nowe zdjęcie" },
+  tr: { pick: "Fotoğraf seç", camera: "Fotoğraf çek", corners: "Köşeleri kâğıdın kenarlarına sürükle", scan: "Düzelt", colour: "Renkli", grey: "Gri tonlamalı", bw: "Siyah beyaz", keep: "Bu sayfayı ekle", image: "Görsel olarak gönder", pdf: "PDF’yi gönder", pages: "{n} sayfa", page: "1 sayfa", cannot: "Bu görsel okunamıyor", drop: "Çıkar", again: "Yeni fotoğraf" },
+  ar: { pick: "اختيار صورة", camera: "التقاط صورة", corners: "اسحب الزوايا إلى حواف الورقة", scan: "تقويم", colour: "ملوّن", grey: "تدرّج رمادي", bw: "أبيض وأسود", keep: "إضافة هذه الصفحة", image: "إرسال كصورة", pdf: "إرسال ملف PDF", pages: "{n} صفحات", page: "صفحة واحدة", cannot: "تعذّر قراءة هذه الصورة", drop: "إزالة", again: "صورة جديدة" },
+  hi: { pick: "फ़ोटो चुनें", camera: "फ़ोटो लें", corners: "कोनों को कागज़ के किनारों तक खींचें", scan: "सीधा करें", colour: "रंगीन", grey: "ग्रेस्केल", bw: "श्वेत-श्याम", keep: "यह पृष्ठ जोड़ें", image: "तस्वीर के रूप में भेजें", pdf: "PDF भेजें", pages: "{n} पृष्ठ", page: "1 पृष्ठ", cannot: "यह तस्वीर पढ़ी नहीं जा सकती", drop: "हटाएँ", again: "नई फ़ोटो" },
+  bn: { pick: "ছবি বাছুন", camera: "ছবি তুলুন", corners: "কোণগুলো কাগজের কিনারায় টেনে আনুন", scan: "সোজা করুন", colour: "রঙিন", grey: "গ্রেস্কেল", bw: "সাদা-কালো", keep: "এই পৃষ্ঠা যোগ করুন", image: "ছবি হিসেবে পাঠান", pdf: "PDF পাঠান", pages: "{n} পৃষ্ঠা", page: "১ পৃষ্ঠা", cannot: "এই ছবি পড়া যাচ্ছে না", drop: "সরান", again: "নতুন ছবি" },
+  id: { pick: "Pilih foto", camera: "Ambil foto", corners: "Seret sudut-sudut ke tepi kertas", scan: "Luruskan", colour: "Berwarna", grey: "Skala abu-abu", bw: "Hitam putih", keep: "Tambahkan halaman ini", image: "Kirim sebagai gambar", pdf: "Kirim PDF", pages: "{n} halaman", page: "1 halaman", cannot: "Gambar itu tidak bisa dibaca", drop: "Keluarkan", again: "Foto baru" },
+  vi: { pick: "Chọn ảnh", camera: "Chụp ảnh", corners: "Kéo các góc đến mép tờ giấy", scan: "Làm thẳng", colour: "Màu", grey: "Thang xám", bw: "Đen trắng", keep: "Thêm trang này", image: "Gửi dưới dạng ảnh", pdf: "Gửi PDF", pages: "{n} trang", page: "1 trang", cannot: "Không đọc được ảnh đó", drop: "Bỏ ra", again: "Ảnh mới" },
+  th: { pick: "เลือกรูปถ่าย", camera: "ถ่ายรูป", corners: "ลากมุมไปที่ขอบกระดาษ", scan: "ปรับให้ตรง", colour: "สี", grey: "ระดับสีเทา", bw: "ขาวดำ", keep: "เพิ่มหน้านี้", image: "ส่งเป็นรูปภาพ", pdf: "ส่ง PDF", pages: "{n} หน้า", page: "1 หน้า", cannot: "อ่านรูปนี้ไม่ได้", drop: "นำออก", again: "รูปใหม่" },
+  ja: { pick: "写真を選ぶ", camera: "写真を撮る", corners: "角を紙の端までドラッグ", scan: "まっすぐにする", colour: "カラー", grey: "グレースケール", bw: "白黒", keep: "このページを追加", image: "画像として送信", pdf: "PDF を送信", pages: "{n} ページ", page: "1 ページ", cannot: "この画像は読み込めません", drop: "取り除く", again: "新しい写真" },
+  ko: { pick: "사진 선택", camera: "사진 찍기", corners: "모서리를 종이 가장자리로 끌어다 놓으세요", scan: "반듯하게", colour: "컬러", grey: "회색조", bw: "흑백", keep: "이 페이지 추가", image: "이미지로 보내기", pdf: "PDF 보내기", pages: "{n}페이지", page: "1페이지", cannot: "이 이미지를 읽을 수 없습니다", drop: "빼기", again: "새 사진" },
+  "zh-CN": { pick: "选择照片", camera: "拍照", corners: "把四角拖到纸张边缘", scan: "校正", colour: "彩色", grey: "灰度", bw: "黑白", keep: "添加此页", image: "作为图片发送", pdf: "发送 PDF", pages: "{n} 页", page: "1 页", cannot: "无法读取该图片", drop: "移除", again: "新照片" },
+  "zh-TW": { pick: "選擇照片", camera: "拍照", corners: "把四角拖到紙張邊緣", scan: "校正", colour: "彩色", grey: "灰階", bw: "黑白", keep: "加入此頁", image: "以圖片傳送", pdf: "傳送 PDF", pages: "{n} 頁", page: "1 頁", cannot: "無法讀取該圖片", drop: "移除", again: "新照片" },
 };
 
 /** A text in the language, or in English; `{n}` filled in. */
@@ -327,14 +397,34 @@ ft-scanner li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-
 `;
 
 /** An Ionicon in a button: Ionic's own `ion-icon` when the app lent it by name, else the one the
- *  app serves at `./icon/<name>.svg`, painted in the button's colour. Never a picture of ours. */
-const icon = (name) =>
-  globalThis.Ionicons?.map?.has(name)
-    ? `<ion-icon slot="icon-only" name="${name}" aria-hidden="true"></ion-icon>`
-    : `<i slot="icon-only" class="ft-i" style="--i:url(./icon/${name}.svg)" aria-hidden="true"></i>`;
+ *  app serves at `./icon/<name>.svg`, painted in the button's colour. In an `ion-button` it goes in
+ *  the `icon-only` slot; an `ion-segment-button` has only its default slot (`slot` empty). */
+const icon = (name, slot = "icon-only") => {
+  const at = slot ? ` slot="${slot}"` : "";
+  return globalThis.Ionicons?.map?.has(name)
+    ? `<ion-icon${at} name="${name}" aria-hidden="true"></ion-icon>`
+    : `<i${at} class="ft-i" style="--i:url(./icon/${name}.svg)" aria-hidden="true"></i>`;
+};
 
-/** The longest side the picture is worked on: more only makes it slow and heavy. */
-const WORK_PIXELS = 1600;
+/** The modes, in the order of the segment, each with its Ionicon. */
+const MODES = { colour: "color-palette-outline", grey: "contrast-outline", bw: "invert-mode-outline" };
+
+/** Ionicons the app does not lend by name, as Ionicons ships them (ionicons 8.1.0, MIT): handed to
+ *  the app's Ionic with `ftIonic.addIcons` (plugin-sdk), so `ion-icon` draws them like the rest. */
+const OWN_ICONS = {
+  "invert-mode-outline":
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' class='ionicon'><circle cx='256' cy='256' r='208' stroke-miterlimit='10' class='ionicon-fill-none ionicon-stroke-width'/><path d='M256 176v160a80 80 0 0 1 0-160M256 48v128a80 80 0 0 1 0 160v128c114.88 0 208-93.12 208-208S370.88 48 256 48'/></svg>",
+};
+
+/** Gives the app's Ionic the icons of ours it does not have yet. */
+function lendOwnIcons() {
+  const missing = Object.entries(OWN_ICONS).filter(([name]) => !globalThis.Ionicons?.map?.has(name));
+  if (missing.length) globalThis.ftIonic?.addIcons?.(Object.fromEntries(missing));
+}
+
+/** The longest side the picture is worked on (2026-10-13): about 210 dpi on an A4 sheet, so printed
+ *  text stays sharp; more only makes it slow and heavy. */
+export const WORK_PIXELS = 2500;
 /** The longest side shown on the screen. */
 const VIEW_PIXELS = 1024;
 
@@ -345,7 +435,7 @@ class Scanner extends HTMLElement {
     this.source = null;
     this.quad = null;
     this.result = null;
-    this.clean = true;
+    this.mode = "grey";
     this.pages = [];
     this.name = "scan.jpg";
     this.dragging = -1;
@@ -407,7 +497,7 @@ class Scanner extends HTMLElement {
     this.paint();
   }
 
-  /** The page straightened from the corners, cleaned if asked. */
+  /** The page straightened from the corners, in the mode chosen. */
   straighten() {
     if (!this.source || !this.quad) return;
     const context = this.source.getContext("2d");
@@ -415,7 +505,7 @@ class Scanner extends HTMLElement {
     const data = context.getImageData(0, 0, this.source.width, this.source.height);
     const size = quadSize(this.quad, WORK_PIXELS);
     let page = warp(data, this.quad, size);
-    if (this.clean) page = cleaned(page);
+    page = cleaned(page, this.mode);
     const canvas = document.createElement("canvas");
     canvas.width = page.width;
     canvas.height = page.height;
@@ -425,8 +515,11 @@ class Scanner extends HTMLElement {
     this.paint();
   }
 
-  toggleClean() {
-    this.clean = !this.clean;
+  /** Another mode: the page shown is straightened again in it; with none, only the choice changes.
+   *  A tap arrives twice (the click, and Ionic's ionChange): the second finds the mode already set. */
+  choose(mode) {
+    if (!Object.keys(MODES).includes(mode) || mode === this.mode) return;
+    this.mode = mode;
     if (this.result) this.straighten();
     else this.paint();
   }
@@ -517,11 +610,13 @@ class Scanner extends HTMLElement {
 
   // ---- What is on the screen ----------------------------------------------------------------
 
-  /** The window, once: Ionic's header with the bar, and the page below it. In the page, not in a
-   *  shadow root: Ionic's global styles do not cross a shadow boundary. Drawing the bar again on
-   *  every change would make Ionic draw its buttons again, and they would flash. */
+  /** The window, once: Ionic's header with the bar and, under it, the mode in a bar of its own, so
+   *  the page below never moves; then the page. In the page, not in a shadow root: Ionic's global
+   *  styles do not cross a shadow boundary. Drawing the bars again on every change would make Ionic
+   *  draw its buttons again, and they would flash. */
   frame() {
     if (this.page) return;
+    lendOwnIcons();
     this.innerHTML = `
       <style>${STYLE}</style>
       <ion-header>
@@ -530,7 +625,6 @@ class Scanner extends HTMLElement {
           ${this.camera ? `<ion-button data-act="camera">${icon("camera-outline")}</ion-button>` : ""}
           <ion-button data-act="pick">${icon("image-outline")}</ion-button>
           <ion-button data-act="scan">${icon("crop-outline")}</ion-button>
-          <ion-button data-act="clean">${icon("document-text-outline")}</ion-button>
           <ion-button data-act="keep">${icon("add-outline")}</ion-button>
         </ion-buttons>
         <ion-buttons slot="end">
@@ -538,11 +632,19 @@ class Scanner extends HTMLElement {
           <ion-button data-act="pdf">${icon("send-outline")}</ion-button>
         </ion-buttons>
       </ion-toolbar>
+      <ion-toolbar>
+        <ion-segment value="${this.mode}">
+          ${Object.entries(MODES).map(([mode, name]) => `<ion-segment-button value="${mode}">${icon(name, "")}</ion-segment-button>`).join("")}
+        </ion-segment>
+      </ion-toolbar>
       </ion-header>
       <ion-content class="ion-padding"></ion-content>
     `;
     this.page = this.querySelector("ion-content");
     this.querySelector("ion-toolbar").onclick = (event) => this.onAct(event);
+    this.modes = this.querySelector("ion-segment");
+    this.modes.addEventListener("ionChange", (event) => this.choose(event.detail?.value));
+    this.modes.onclick = (event) => this.choose(event.target.closest?.("ion-segment-button")?.getAttribute("value"));
   }
 
   onAct(event) {
@@ -552,7 +654,6 @@ class Scanner extends HTMLElement {
     if (act === "camera") this.shoot();
     else if (act === "pick") this.again();
     else if (act === "scan") this.straighten();
-    else if (act === "clean") this.toggleClean();
     else if (act === "keep") this.keep();
     else if (act === "image") this.sendImage();
     else if (act === "pdf") this.sendPdf();
@@ -572,13 +673,11 @@ class Scanner extends HTMLElement {
     bar("camera", T("camera"));
     bar("pick", T(shown ? "again" : "pick"));
     bar("scan", T("scan"), Boolean(this.source && !this.result));
-    bar("clean", T("clean"));
     bar("keep", T("keep"), Boolean(this.result));
     bar("image", T("image"), Boolean(this.result || this.pages.length));
     bar("pdf", T("pdf"), Boolean(count));
-    const clean = this.querySelector('ion-toolbar [data-act="clean"]');
-    clean.fill = this.clean ? "solid" : undefined;
-    clean.setAttribute("aria-pressed", String(this.clean));
+    this.modes.value = this.mode;
+    for (const button of this.modes.querySelectorAll("ion-segment-button")) button.setAttribute("aria-label", T(button.getAttribute("value")));
     this.page.innerHTML = `
       <p class="note" ${this.note ? "" : "hidden"}>${escape(this.note ?? "")}</p>
       ${this.camera && !shown && !this.pages.length ? `<div class="choices"><ion-button fill="outline" data-act="camera" aria-label="${escape(T("camera"))}">${icon("camera-outline")}</ion-button><ion-button fill="outline" data-act="pick" aria-label="${escape(T("pick"))}">${icon("image-outline")}</ion-button></div>` : ""}

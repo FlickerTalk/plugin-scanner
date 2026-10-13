@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   TEXTS,
   a4Box,
+  background,
   base64Of,
   clamped,
   cleaned,
@@ -16,6 +17,7 @@ import {
   quadSize,
   startingQuad,
   t,
+  WORK_PIXELS,
   warp,
 } from "./dist/index.js";
 import source from "./dist/index.js?raw";
@@ -72,6 +74,13 @@ describe("texts", () => {
   it("name the camera in every language of the app", () => {
     expect(t("en", "camera")).toBe("Take a photo");
     expect(t("es", "camera")).toBe("Hacer una foto");
+  });
+
+  // 2026-10-13: three modes instead of cleaning on or off.
+  it("name the three modes, and no longer an on/off cleaning", () => {
+    expect([t("en", "colour"), t("en", "grey"), t("en", "bw")]).toEqual(["Colour", "Greyscale", "Black and white"]);
+    expect([t("es", "colour"), t("es", "grey"), t("es", "bw")]).toEqual(["Color", "Escala de grises", "Blanco y negro"]);
+    expect(TEXTS.en.clean).toBe(undefined);
   });
 
   it("fall back to English for a language the app does not have, and fill the count in", () => {
@@ -144,6 +153,13 @@ describe("geometry", () => {
     const huge = quadSize(square.map(({ x, y }) => ({ x: x * 400, y: y * 200 })), 1600);
     expect(huge).toEqual({ width: 1600, height: 800 });
     expect(quadSize(square.map(({ x, y }) => ({ x: x / 10, y: y / 10 })))).toEqual({ width: 8, height: 8 });
+  });
+
+  // 2026-10-13: 1600 px on the longest side is about 137 dpi on an A4 sheet, and printed text came
+  // out soft; 2500 px is about 210 dpi.
+  it("works the page at up to 2500 px on its longest side", () => {
+    expect(WORK_PIXELS).toBe(2500);
+    expect(quadSize(square.map(({ x, y }) => ({ x: x * 400, y: y * 200 })))).toEqual({ width: 2500, height: 1250 });
   });
 
   it("starts the corners a little inside the picture, and keeps a dragged one inside it", () => {
@@ -266,6 +282,89 @@ describe("cleaning", () => {
     const night = picture(10, 10, () => [5, 5, 5]);
     expect(pixel(cleaned(night), 4, 4)[0]).toBe(0);
   });
+
+  // 2026-10-13: three modes. A light that fades from one side to the other, as a shadow does: paper
+  // and ink both darker on the right. With one level for the whole page, the right half came out
+  // grey and its ink faded.
+  const shadowed = () =>
+    picture(200, 160, (x, y) => {
+      const light = 240 - (x / 199) * 100;
+      const ink = y % 20 < 2;
+      const level = Math.round(light * (ink ? 0.25 : 0.9));
+      return [level, level, level];
+    });
+  const isInk = (y) => y % 20 < 2;
+
+  it("evens out a shadow in grey: the paper white and the ink dark on both sides of the page", () => {
+    const made = cleaned(shadowed(), "grey");
+    for (const x of [2, 50, 100, 150, 197]) {
+      for (const y of [5, 30, 75, 158]) expect(pixel(made, x, y)[0], `paper ${x},${y}`).toBeGreaterThanOrEqual(250);
+      for (const y of [0, 21, 80, 141]) expect(pixel(made, x, y)[0], `ink ${x},${y}`).toBeLessThanOrEqual(30);
+    }
+  });
+
+  it("leaves only black and white in black and white", () => {
+    const made = cleaned(shadowed(), "bw");
+    for (let y = 0; y < made.height; y += 1) {
+      for (let x = 0; x < made.width; x += 1) {
+        const [r, g, b, a] = pixel(made, x, y);
+        expect(r, `${x},${y}`).toBe(isInk(y) ? 0 : 255);
+        expect([g, b, a]).toEqual([r, r, 255]);
+      }
+    }
+  });
+
+  // The grid of a notebook or a pencil stroke: a line much lighter than ink, a fifth darker than
+  // the paper.
+  it("keeps a faint line as a light grey in grey, drops it in black and white, and is grey by default", () => {
+    const ruled = picture(120, 120, (x, y) => (y === 40 || y === 41 ? [160, 160, 160] : y === 80 || y === 81 ? [50, 50, 50] : [200, 200, 200]));
+    const grey = cleaned(ruled, "grey");
+    expect(pixel(grey, 60, 20)[0]).toBe(255);
+    expect(pixel(grey, 60, 40)[0]).toBeGreaterThan(150);
+    expect(pixel(grey, 60, 40)[0]).toBeLessThan(240);
+    expect(pixel(grey, 60, 80)[0]).toBe(0);
+    const bw = cleaned(ruled, "bw");
+    expect(pixel(bw, 60, 40)[0]).toBe(255);
+    expect(pixel(bw, 60, 80)[0]).toBe(0);
+    expect(cleaned(ruled)).toEqual(grey);
+  });
+
+  it("leaves the page as it is in colour", () => {
+    const page = picture(16, 16, (x, y) => [x * 15, y * 15, 90]);
+    const made = cleaned(page, "colour");
+    expect(made.width).toBe(16);
+    expect(made.height).toBe(16);
+    expect(Array.from(made.data)).toEqual(Array.from(page.data));
+  });
+});
+
+// 2026-10-13: the brightness of the paper is read by zones, not once for the whole page: a
+// shadow, a fold or a light from one side leaves part of the paper darker than the rest.
+describe("paper background", () => {
+  it("is the level of the page itself on an even page", () => {
+    const flat = picture(64, 48, () => [137, 137, 137]);
+    const level = background(flat);
+    expect(level).toHaveLength(64 * 48);
+    expect([...new Set(level)]).toEqual([137]);
+  });
+
+  // Ink is thin: the brightest of a zone is its paper, so a stroke does not darken it.
+  it("is still the paper under a thin dark line", () => {
+    const lined = picture(64, 64, (x) => (x === 30 ? [30, 30, 30] : [210, 210, 210]));
+    const level = background(lined);
+    for (const y of [0, 10, 31, 63]) {
+      for (const x of [0, 29, 30, 31, 63]) expect(level[y * 64 + x], `${x},${y}`).toBeCloseTo(210, 0);
+    }
+  });
+
+  it("follows a light that fades across the page", () => {
+    const fading = picture(200, 40, (x) => {
+      const level = Math.round(220 - x / 2);
+      return [level, level, level];
+    });
+    const level = background(fading);
+    expect(level[20 * 200 + 10]).toBeGreaterThan(level[20 * 200 + 190] + 60);
+  });
 });
 
 describe("names", () => {
@@ -353,7 +452,9 @@ describe("component", () => {
     expect(aria(element.querySelector('[data-act="scan"]'), "aria-label")).toBe("Enderezar");
     expect(element.querySelector('[data-act="scan"]').disabled).toBe(true);
     expect(element.querySelector('[data-act="pdf"]').disabled).toBe(true);
-    expect(aria(element.querySelector('[data-act="clean"]'), "aria-pressed")).toBe("true");
+    const modes = element.querySelector("ion-segment");
+    expect(modes.value).toBe("grey");
+    expect([...modes.querySelectorAll("ion-segment-button")].map((button) => aria(button, "aria-label"))).toEqual(["Color", "Escala de grises", "Blanco y negro"]);
     element.remove();
     delete globalThis.ft;
   });
@@ -474,6 +575,7 @@ describe("with the Ionic the app lends", () => {
 
   afterEach(() => {
     delete globalThis.Ionicons;
+    delete globalThis.ftIonic;
     delete globalThis.ft;
     document.body.innerHTML = "";
   });
@@ -489,8 +591,15 @@ describe("with the Ionic the app lends", () => {
     expect(element.querySelector(":scope > ion-header > ion-toolbar")).toBeTruthy();
     expect(element.querySelector(":scope > ion-content .choices")).toBeTruthy();
     const acts = [...element.querySelectorAll("ion-toolbar ion-button")].map((button) => button.dataset.act);
-    expect(acts).toEqual(["camera", "pick", "scan", "clean", "keep", "image", "pdf"]);
+    expect(acts).toEqual(["camera", "pick", "scan", "keep", "image", "pdf"]);
     for (const button of element.querySelectorAll("ion-toolbar ion-button")) expect(aria(button, "aria-label"), button.dataset.act).toBeTruthy();
+    // The mode has a bar of its own under the buttons, in the header: the page below never moves.
+    const bars = element.querySelectorAll(":scope > ion-header > ion-toolbar");
+    expect(bars).toHaveLength(2);
+    expect(bars[0].querySelector("ion-segment")).toBe(null);
+    const modes = [...bars[1].querySelectorAll(":scope > ion-segment > ion-segment-button")];
+    expect(modes.map((button) => button.getAttribute("value"))).toEqual(["colour", "grey", "bw"]);
+    for (const button of modes) expect(aria(button, "aria-label"), button.getAttribute("value")).toBeTruthy();
     // The corner handles are drag handles over the picture, not actions: the only plain buttons.
     expect(element.querySelector("button:not(.handle)")).toBe(null);
   });
@@ -509,14 +618,39 @@ describe("with the Ionic the app lends", () => {
     expect(element.querySelectorAll(":scope > ion-content ol li")).toHaveLength(1);
   });
 
-  it("shows cleaning as a pressed button, and takes a page out with the Ionic button of its row", async () => {
+  // 2026-10-13: colour, greyscale or black and white, greyscale to begin with. A tap is a click on
+  // the segment's button, and Ionic says it again with ionChange: once is enough.
+  it("shows the mode as a segment, changes it with a tap, and straightens the shown page again in it", async () => {
     const element = await mount();
-    const clean = element.querySelector('ion-toolbar [data-act="clean"]');
-    expect(clean.fill).toBe("solid");
-    clean.click();
+    const modes = element.querySelector("ion-segment");
+    expect(element.mode).toBe("grey");
+    expect(modes.value).toBe("grey");
+    const straighten = vi.spyOn(element, "straighten").mockImplementation(() => {});
+
+    // No page straightened yet: only the choice changes.
+    modes.querySelector('ion-segment-button[value="bw"]').click();
     await tick();
-    expect(aria(clean, "aria-pressed")).toBe("false");
-    expect(clean.fill).toBe(undefined);
+    expect(element.mode).toBe("bw");
+    expect(modes.value).toBe("bw");
+    expect(straighten).not.toHaveBeenCalled();
+    modes.dispatchEvent(new CustomEvent("ionChange", { detail: { value: "colour" } }));
+    expect(element.mode).toBe("colour");
+    expect(modes.value).toBe("colour");
+    expect(element.querySelector("ion-segment")).toBe(modes);
+
+    // A page shown: straightened again, once, in the new mode.
+    element.result = document.createElement("canvas");
+    modes.querySelector('ion-segment-button[value="grey"]').click();
+    modes.dispatchEvent(new CustomEvent("ionChange", { detail: { value: "grey" } }));
+    await tick();
+    expect(element.mode).toBe("grey");
+    expect(straighten).toHaveBeenCalledTimes(1);
+    modes.dispatchEvent(new CustomEvent("ionChange", { detail: { value: "nothing-of-the-kind" } }));
+    expect(element.mode).toBe("grey");
+  });
+
+  it("takes a page out with the Ionic button of its row", async () => {
+    const element = await mount();
 
     element.pages.push(kept(), kept());
     element.paint();
@@ -535,6 +669,29 @@ describe("with the Ionic the app lends", () => {
     globalThis.Ionicons = { map: new Map([["image-outline", "data:image/svg+xml;utf8,<svg></svg>"]]) };
     element = await mount();
     expect(element.querySelector('[data-act="pick"] ion-icon[slot="icon-only"]').getAttribute("name")).toBe("image-outline");
+  });
+
+  // The app lends color-palette-outline and contrast-outline by name, not invert-mode-outline: the
+  // tool hands that one to the app's Ionic with ftIonic.addIcons (plugin-sdk), as an Ionicon SVG.
+  it("draws the modes with Ionicons, registering with the app's Ionic the one it does not lend", async () => {
+    const svg = "data:image/svg+xml;utf8,<svg></svg>";
+    const map = new Map([["color-palette-outline", svg], ["contrast-outline", svg]]);
+    globalThis.Ionicons = { map };
+    const addIcons = vi.fn((icons) => Object.entries(icons).forEach(([name, data]) => map.set(name, data)));
+    globalThis.ftIonic = { addIcons };
+    const element = await mount();
+    expect(addIcons).toHaveBeenCalledTimes(1);
+    const [lent] = addIcons.mock.calls[0];
+    expect(Object.keys(lent)).toEqual(["invert-mode-outline"]);
+    expect(lent["invert-mode-outline"]).toMatch(/^data:image\/svg\+xml;utf8,<svg /);
+    const drawn = [...element.querySelectorAll("ion-segment-button")].map((button) => [button.getAttribute("value"), button.querySelector("ion-icon")?.getAttribute("name")]);
+    expect(drawn).toEqual([
+      ["colour", "color-palette-outline"],
+      ["grey", "contrast-outline"],
+      ["bw", "invert-mode-outline"],
+    ]);
+    // A segment button has one slot, its default one: an icon-only slot would hide the icon.
+    expect(element.querySelector("ion-segment-button [slot]")).toBe(null);
   });
 });
 
