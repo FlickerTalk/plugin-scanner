@@ -17,6 +17,7 @@ import {
   quadSize,
   startingQuad,
   t,
+  WORK_PIXELS,
   warp,
 } from "./dist/index.js";
 import source from "./dist/index.js?raw";
@@ -152,6 +153,13 @@ describe("geometry", () => {
     const huge = quadSize(square.map(({ x, y }) => ({ x: x * 400, y: y * 200 })), 1600);
     expect(huge).toEqual({ width: 1600, height: 800 });
     expect(quadSize(square.map(({ x, y }) => ({ x: x / 10, y: y / 10 })))).toEqual({ width: 8, height: 8 });
+  });
+
+  // 2026-10-13: 1600 px on the longest side is about 137 dpi on an A4 sheet, and printed text came
+  // out soft; 2500 px is about 210 dpi.
+  it("works the page at up to 2500 px on its longest side", () => {
+    expect(WORK_PIXELS).toBe(2500);
+    expect(quadSize(square.map(({ x, y }) => ({ x: x * 400, y: y * 200 })))).toEqual({ width: 2500, height: 1250 });
   });
 
   it("starts the corners a little inside the picture, and keeps a dragged one inside it", () => {

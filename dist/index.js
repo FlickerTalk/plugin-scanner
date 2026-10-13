@@ -57,7 +57,7 @@ const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
  * bottom left): the mean of its opposite sides, scaled so the longest side is at most `max`, and
  * never under 8 pixels.
  */
-export function quadSize(quad, max = 1600) {
+export function quadSize(quad, max = WORK_PIXELS) {
   const [tl, tr, br, bl] = quad;
   let width = (distance(tl, tr) + distance(bl, br)) / 2;
   let height = (distance(tl, bl) + distance(tr, br)) / 2;
@@ -421,8 +421,9 @@ function lendOwnIcons() {
   if (missing.length) globalThis.ftIonic?.addIcons?.(Object.fromEntries(missing));
 }
 
-/** The longest side the picture is worked on: more only makes it slow and heavy. */
-const WORK_PIXELS = 1600;
+/** The longest side the picture is worked on (2026-10-13): about 210 dpi on an A4 sheet, so printed
+ *  text stays sharp; more only makes it slow and heavy. */
+export const WORK_PIXELS = 2500;
 /** The longest side shown on the screen. */
 const VIEW_PIXELS = 1024;
 
