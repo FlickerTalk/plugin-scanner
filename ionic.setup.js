@@ -8,7 +8,9 @@ import { defineCustomElement as buttons } from "@ionic/core/components/ion-butto
 import { defineCustomElement as content } from "@ionic/core/components/ion-content.js";
 import { defineCustomElement as icon } from "@ionic/core/components/ion-icon.js";
 import { defineCustomElement as header } from "@ionic/core/components/ion-header.js";
+import { defineCustomElement as segment } from "@ionic/core/components/ion-segment.js";
+import { defineCustomElement as segmentButton } from "@ionic/core/components/ion-segment-button.js";
 import { defineCustomElement as toolbar } from "@ionic/core/components/ion-toolbar.js";
 
 initialize();
-for (const define of [button, buttons, content, header, icon, toolbar]) define();
+for (const define of [button, buttons, content, header, icon, segment, segmentButton, toolbar]) define();

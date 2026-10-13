@@ -75,6 +75,13 @@ describe("texts", () => {
     expect(t("es", "camera")).toBe("Hacer una foto");
   });
 
+  // 2026-10-13: three modes instead of cleaning on or off.
+  it("name the three modes, and no longer an on/off cleaning", () => {
+    expect([t("en", "colour"), t("en", "grey"), t("en", "bw")]).toEqual(["Colour", "Greyscale", "Black and white"]);
+    expect([t("es", "colour"), t("es", "grey"), t("es", "bw")]).toEqual(["Color", "Escala de grises", "Blanco y negro"]);
+    expect(TEXTS.en.clean).toBe(undefined);
+  });
+
   it("fall back to English for a language the app does not have, and fill the count in", () => {
     expect(t("es", "scan")).toBe("Enderezar");
     expect(t("pt-BR", "scan")).toBe(TEXTS.pt.scan);
@@ -437,7 +444,9 @@ describe("component", () => {
     expect(aria(element.querySelector('[data-act="scan"]'), "aria-label")).toBe("Enderezar");
     expect(element.querySelector('[data-act="scan"]').disabled).toBe(true);
     expect(element.querySelector('[data-act="pdf"]').disabled).toBe(true);
-    expect(aria(element.querySelector('[data-act="clean"]'), "aria-pressed")).toBe("true");
+    const modes = element.querySelector("ion-segment");
+    expect(modes.value).toBe("grey");
+    expect([...modes.querySelectorAll("ion-segment-button")].map((button) => aria(button, "aria-label"))).toEqual(["Color", "Escala de grises", "Blanco y negro"]);
     element.remove();
     delete globalThis.ft;
   });
@@ -558,6 +567,7 @@ describe("with the Ionic the app lends", () => {
 
   afterEach(() => {
     delete globalThis.Ionicons;
+    delete globalThis.ftIonic;
     delete globalThis.ft;
     document.body.innerHTML = "";
   });
@@ -573,8 +583,15 @@ describe("with the Ionic the app lends", () => {
     expect(element.querySelector(":scope > ion-header > ion-toolbar")).toBeTruthy();
     expect(element.querySelector(":scope > ion-content .choices")).toBeTruthy();
     const acts = [...element.querySelectorAll("ion-toolbar ion-button")].map((button) => button.dataset.act);
-    expect(acts).toEqual(["camera", "pick", "scan", "clean", "keep", "image", "pdf"]);
+    expect(acts).toEqual(["camera", "pick", "scan", "keep", "image", "pdf"]);
     for (const button of element.querySelectorAll("ion-toolbar ion-button")) expect(aria(button, "aria-label"), button.dataset.act).toBeTruthy();
+    // The mode has a bar of its own under the buttons, in the header: the page below never moves.
+    const bars = element.querySelectorAll(":scope > ion-header > ion-toolbar");
+    expect(bars).toHaveLength(2);
+    expect(bars[0].querySelector("ion-segment")).toBe(null);
+    const modes = [...bars[1].querySelectorAll(":scope > ion-segment > ion-segment-button")];
+    expect(modes.map((button) => button.getAttribute("value"))).toEqual(["colour", "grey", "bw"]);
+    for (const button of modes) expect(aria(button, "aria-label"), button.getAttribute("value")).toBeTruthy();
     // The corner handles are drag handles over the picture, not actions: the only plain buttons.
     expect(element.querySelector("button:not(.handle)")).toBe(null);
   });
@@ -593,14 +610,39 @@ describe("with the Ionic the app lends", () => {
     expect(element.querySelectorAll(":scope > ion-content ol li")).toHaveLength(1);
   });
 
-  it("shows cleaning as a pressed button, and takes a page out with the Ionic button of its row", async () => {
+  // 2026-10-13: colour, greyscale or black and white, greyscale to begin with. A tap is a click on
+  // the segment's button, and Ionic says it again with ionChange: once is enough.
+  it("shows the mode as a segment, changes it with a tap, and straightens the shown page again in it", async () => {
     const element = await mount();
-    const clean = element.querySelector('ion-toolbar [data-act="clean"]');
-    expect(clean.fill).toBe("solid");
-    clean.click();
+    const modes = element.querySelector("ion-segment");
+    expect(element.mode).toBe("grey");
+    expect(modes.value).toBe("grey");
+    const straighten = vi.spyOn(element, "straighten").mockImplementation(() => {});
+
+    // No page straightened yet: only the choice changes.
+    modes.querySelector('ion-segment-button[value="bw"]').click();
     await tick();
-    expect(aria(clean, "aria-pressed")).toBe("false");
-    expect(clean.fill).toBe(undefined);
+    expect(element.mode).toBe("bw");
+    expect(modes.value).toBe("bw");
+    expect(straighten).not.toHaveBeenCalled();
+    modes.dispatchEvent(new CustomEvent("ionChange", { detail: { value: "colour" } }));
+    expect(element.mode).toBe("colour");
+    expect(modes.value).toBe("colour");
+    expect(element.querySelector("ion-segment")).toBe(modes);
+
+    // A page shown: straightened again, once, in the new mode.
+    element.result = document.createElement("canvas");
+    modes.querySelector('ion-segment-button[value="grey"]').click();
+    modes.dispatchEvent(new CustomEvent("ionChange", { detail: { value: "grey" } }));
+    await tick();
+    expect(element.mode).toBe("grey");
+    expect(straighten).toHaveBeenCalledTimes(1);
+    modes.dispatchEvent(new CustomEvent("ionChange", { detail: { value: "nothing-of-the-kind" } }));
+    expect(element.mode).toBe("grey");
+  });
+
+  it("takes a page out with the Ionic button of its row", async () => {
+    const element = await mount();
 
     element.pages.push(kept(), kept());
     element.paint();
@@ -619,6 +661,29 @@ describe("with the Ionic the app lends", () => {
     globalThis.Ionicons = { map: new Map([["image-outline", "data:image/svg+xml;utf8,<svg></svg>"]]) };
     element = await mount();
     expect(element.querySelector('[data-act="pick"] ion-icon[slot="icon-only"]').getAttribute("name")).toBe("image-outline");
+  });
+
+  // The app lends color-palette-outline and contrast-outline by name, not invert-mode-outline: the
+  // tool hands that one to the app's Ionic with ftIonic.addIcons (plugin-sdk), as an Ionicon SVG.
+  it("draws the modes with Ionicons, registering with the app's Ionic the one it does not lend", async () => {
+    const svg = "data:image/svg+xml;utf8,<svg></svg>";
+    const map = new Map([["color-palette-outline", svg], ["contrast-outline", svg]]);
+    globalThis.Ionicons = { map };
+    const addIcons = vi.fn((icons) => Object.entries(icons).forEach(([name, data]) => map.set(name, data)));
+    globalThis.ftIonic = { addIcons };
+    const element = await mount();
+    expect(addIcons).toHaveBeenCalledTimes(1);
+    const [lent] = addIcons.mock.calls[0];
+    expect(Object.keys(lent)).toEqual(["invert-mode-outline"]);
+    expect(lent["invert-mode-outline"]).toMatch(/^data:image\/svg\+xml;utf8,<svg /);
+    const drawn = [...element.querySelectorAll("ion-segment-button")].map((button) => [button.getAttribute("value"), button.querySelector("ion-icon")?.getAttribute("name")]);
+    expect(drawn).toEqual([
+      ["colour", "color-palette-outline"],
+      ["grey", "contrast-outline"],
+      ["bw", "invert-mode-outline"],
+    ]);
+    // A segment button has one slot, its default one: an icon-only slot would hide the icon.
+    expect(element.querySelector("ion-segment-button [slot]")).toBe(null);
   });
 });
 
