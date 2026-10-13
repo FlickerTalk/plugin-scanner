@@ -1,8 +1,9 @@
 # plugin-scanner
 
 **Scanner** para [FlickerTalk](https://flickertalk.com). Convierte la foto de un papel en un
-documento: se marcan las cuatro esquinas, el plugin endereza la perspectiva, lo deja en blanco y
-negro limpio si se quiere, y lo envía como PDF (una página por foto) o como imagen.
+documento: se marcan las cuatro esquinas, el plugin endereza la perspectiva, lo limpia en el modo
+que se elija (color, escala de grises o blanco y negro) y lo envía como PDF (una página por foto) o
+como imagen.
 
 Todo ocurre en el teléfono: el plugin no tiene red, no ve la conversación ni las claves, y solo
 recibe la foto que **el usuario** hace con la cámara, elige en el selector del sistema o le
@@ -17,10 +18,19 @@ nunca el plugin.
   Scanner. Con la app 1.4.1 o posterior, al abrirlo se elige entre la cámara y la galería; en una
   app anterior se abre la galería directamente, como antes.
 - **Cuatro esquinas** arrastrables sobre la foto; empiezan en un marco interior y se ajustan con el
-  dedo. El documento resultante tiene el tamaño medio de los lados marcados, hasta 1600 px.
-- **Modo documento**: gris, el papel a blanco y la tinta a negro, con un umbral que sigue la luz
-  de la propia página (una foto oscura sigue saliendo como papel). Se puede apagar para conservar
-  el color.
+  dedo. El documento resultante tiene el tamaño medio de los lados marcados, hasta 2500 px en el
+  lado largo (unos 210 ppp en un A4, para que el texto impreso salga nítido).
+- **Tres modos**, en una barra propia bajo los botones:
+  - **Color**: la página enderezada tal cual.
+  - **Escala de grises** (el modo por defecto): el papel a blanco, la tinta oscura, y se conservan
+    los tonos y el lápiz suave.
+  - **Blanco y negro**: solo blanco y negro, con un borde estrecho; la cuadrícula tenue de un
+    cuaderno desaparece y la tinta queda.
+
+  El nivel del papel se lee **por zonas**, no una sola vez para toda la página: así una sombra, un
+  pliegue o la luz que entra por un lado desaparecen, en vez de dejar media página gris con la
+  tinta desvaída. Una foto oscura sigue saliendo como papel. Cambiar de modo con una página ya
+  enderezada la vuelve a enderezar en el modo nuevo.
 - **Varias páginas**: cada escaneo se añade a la lista y se puede quitar.
 - **Enviar como PDF** (una página por escaneo, en A4 con margen) o **como imagen** (la página
   actual, JPEG).
