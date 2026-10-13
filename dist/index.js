@@ -133,36 +133,105 @@ export function warp(source, quad, size) {
 }
 
 /**
- * The page as a document: grey, the paper pushed to white and the ink to black. The brightness of
- * the paper is read from the page itself (most of a page is paper, so a high percentile of its
- * greys), and the threshold follows it: a dim photo still comes out as paper, not as a stain.
+ * How bright the paper is under every pixel, read by zones (2026-10-13): the page's greys shrunk
+ * by 8 with box means, the brightest of every 5 × 5 zones (ink is thin, so the brightest of a zone
+ * is its paper), blurred twice with a box of 8 % of the width (close to a Gaussian, so the level
+ * changes smoothly), and stretched back to the page's size with bilinear interpolation. One grey
+ * per pixel. A shadow, a fold or a light from one side moves this level with it.
  */
-export function cleaned(page) {
+export function background(page) {
   const { width, height, data } = page;
-  const out = new Uint8ClampedArray(data.length);
-  const greys = new Uint8ClampedArray(width * height);
-  const histogram = new Uint32Array(256);
-  for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-    const grey = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
-    greys[p] = grey;
-    histogram[grey] += 1;
-  }
-  // The grey that 85 % of the pixels are at or under: the paper, on a page that is mostly paper.
-  let paper = 255;
-  for (let level = 0, seen = 0; level < 256; level += 1) {
-    seen += histogram[level];
-    if (seen >= greys.length * 0.85) {
-      paper = level;
-      break;
+  const sw = Math.min(width, Math.max(8, Math.ceil(width / 8)));
+  const sh = Math.min(height, Math.max(8, Math.ceil(height / 8)));
+  // Box means: every pixel adds its grey to the zone it falls in.
+  const zones = new Float64Array(sw * sh);
+  const counts = new Uint32Array(sw * sh);
+  const column = new Uint32Array(width);
+  for (let x = 0; x < width; x += 1) column[x] = Math.floor((x * sw) / width);
+  for (let y = 0, i = 0; y < height; y += 1) {
+    const row = Math.floor((y * sh) / height) * sw;
+    for (let x = 0; x < width; x += 1, i += 4) {
+      zones[row + column[x]] += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      counts[row + column[x]] += 1;
     }
   }
-  paper = Math.max(40, paper);
-  const white = paper * 0.8;
-  const black = paper * 0.35;
+  for (let zone = 0; zone < zones.length; zone += 1) zones[zone] /= counts[zone];
+  let grid = along(along(zones, sw, sh, 2, true, true), sw, sh, 2, false, true);
+  const radius = Math.max(1, Math.round(sw * 0.08));
+  for (let pass = 0; pass < 2; pass += 1) grid = along(along(grid, sw, sh, radius, true, false), sw, sh, radius, false, false);
+  // Back to the page's size: each pixel between the four zone centres around it.
+  const where = (at, size, small) => {
+    const s = Math.min(small - 1, Math.max(0, ((at + 0.5) * small) / size - 0.5));
+    const low = Math.floor(s);
+    return [low, Math.min(small - 1, low + 1), s - low];
+  };
+  const left = new Uint32Array(width);
+  const right = new Uint32Array(width);
+  const across = new Float64Array(width);
+  for (let x = 0; x < width; x += 1) [left[x], right[x], across[x]] = where(x, width, sw);
+  const level = new Uint8ClampedArray(width * height);
+  for (let y = 0, p = 0; y < height; y += 1) {
+    const [low, high, down] = where(y, height, sh);
+    const top = low * sw;
+    const bottom = high * sw;
+    for (let x = 0; x < width; x += 1, p += 1) {
+      const above = grid[top + left[x]] + (grid[top + right[x]] - grid[top + left[x]]) * across[x];
+      const below = grid[bottom + left[x]] + (grid[bottom + right[x]] - grid[bottom + left[x]]) * across[x];
+      level[p] = above + (below - above) * down;
+    }
+  }
+  return level;
+}
+
+/**
+ * One pass over a small grid, along its rows or along its columns: every value becomes the
+ * brightest (`max`) or the mean of the values within `radius` of it, the edge repeated past the
+ * edge. The mean runs as a sliding sum, so a pass costs the same whatever the radius.
+ */
+function along(values, width, height, radius, byRow, max) {
+  const out = new Float64Array(values.length);
+  const lines = byRow ? height : width;
+  const length = byRow ? width : height;
+  const step = byRow ? 1 : width;
+  for (let line = 0; line < lines; line += 1) {
+    const start = byRow ? line * width : line;
+    const at = (k) => values[start + Math.min(length - 1, Math.max(0, k)) * step];
+    let sum = 0;
+    for (let k = -radius; k <= radius; k += 1) sum += at(k);
+    for (let k = 0; k < length; k += 1) {
+      if (max) {
+        let best = at(k - radius);
+        for (let j = k - radius + 1; j <= k + radius; j += 1) best = Math.max(best, at(j));
+        out[start + k * step] = best;
+      } else {
+        out[start + k * step] = sum / (2 * radius + 1);
+        sum += at(k + radius + 1) - at(k - radius);
+      }
+    }
+  }
+  return out;
+}
+
+/** For each mode, the ratio of a pixel to its paper that turns black and the one that turns white. */
+const RAMPS = { grey: [0.4, 0.88], bw: [0.61, 0.69] };
+
+/**
+ * The page as the user asked for it (2026-10-13). `colour`: as it is. `grey`: the paper evened to
+ * white, the tones and a faint pencil kept. `bw`: pure black and white with a narrow soft edge, so
+ * the faint grid of a notebook goes and the ink stays. Each pixel is measured against the paper
+ * around it (`background`), not against one level for the whole page: a shadow is still paper, and
+ * a dim photo still comes out as paper, not as a stain.
+ */
+export function cleaned(page, mode = "grey") {
+  const ramp = RAMPS[mode];
+  if (!ramp) return page;
+  const [black, white] = ramp;
+  const { width, height, data } = page;
+  const paper = background(page);
+  const out = new Uint8ClampedArray(data.length);
   for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-    const grey = greys[p];
-    const value = grey >= white ? 255 : Math.max(0, Math.round(((grey - black) / (white - black)) * 255));
-    out[i] = out[i + 1] = out[i + 2] = value;
+    const ratio = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / Math.max(paper[p], 40);
+    out[i] = out[i + 1] = out[i + 2] = ((ratio - black) / (white - black)) * 255;
     out[i + 3] = 255;
   }
   return { width, height, data: out };

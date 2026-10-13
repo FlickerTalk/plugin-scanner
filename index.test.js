@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   TEXTS,
   a4Box,
+  background,
   base64Of,
   clamped,
   cleaned,
@@ -265,6 +266,89 @@ describe("cleaning", () => {
     // A black photo is not turned into a white page.
     const night = picture(10, 10, () => [5, 5, 5]);
     expect(pixel(cleaned(night), 4, 4)[0]).toBe(0);
+  });
+
+  // 2026-10-13: three modes. A light that fades from one side to the other, as a shadow does: paper
+  // and ink both darker on the right. With one level for the whole page, the right half came out
+  // grey and its ink faded.
+  const shadowed = () =>
+    picture(200, 160, (x, y) => {
+      const light = 240 - (x / 199) * 100;
+      const ink = y % 20 < 2;
+      const level = Math.round(light * (ink ? 0.25 : 0.9));
+      return [level, level, level];
+    });
+  const isInk = (y) => y % 20 < 2;
+
+  it("evens out a shadow in grey: the paper white and the ink dark on both sides of the page", () => {
+    const made = cleaned(shadowed(), "grey");
+    for (const x of [2, 50, 100, 150, 197]) {
+      for (const y of [5, 30, 75, 158]) expect(pixel(made, x, y)[0], `paper ${x},${y}`).toBeGreaterThanOrEqual(250);
+      for (const y of [0, 21, 80, 141]) expect(pixel(made, x, y)[0], `ink ${x},${y}`).toBeLessThanOrEqual(30);
+    }
+  });
+
+  it("leaves only black and white in black and white", () => {
+    const made = cleaned(shadowed(), "bw");
+    for (let y = 0; y < made.height; y += 1) {
+      for (let x = 0; x < made.width; x += 1) {
+        const [r, g, b, a] = pixel(made, x, y);
+        expect(r, `${x},${y}`).toBe(isInk(y) ? 0 : 255);
+        expect([g, b, a]).toEqual([r, r, 255]);
+      }
+    }
+  });
+
+  // The grid of a notebook or a pencil stroke: a line much lighter than ink, a fifth darker than
+  // the paper.
+  it("keeps a faint line as a light grey in grey, drops it in black and white, and is grey by default", () => {
+    const ruled = picture(120, 120, (x, y) => (y === 40 || y === 41 ? [160, 160, 160] : y === 80 || y === 81 ? [50, 50, 50] : [200, 200, 200]));
+    const grey = cleaned(ruled, "grey");
+    expect(pixel(grey, 60, 20)[0]).toBe(255);
+    expect(pixel(grey, 60, 40)[0]).toBeGreaterThan(150);
+    expect(pixel(grey, 60, 40)[0]).toBeLessThan(240);
+    expect(pixel(grey, 60, 80)[0]).toBe(0);
+    const bw = cleaned(ruled, "bw");
+    expect(pixel(bw, 60, 40)[0]).toBe(255);
+    expect(pixel(bw, 60, 80)[0]).toBe(0);
+    expect(cleaned(ruled)).toEqual(grey);
+  });
+
+  it("leaves the page as it is in colour", () => {
+    const page = picture(16, 16, (x, y) => [x * 15, y * 15, 90]);
+    const made = cleaned(page, "colour");
+    expect(made.width).toBe(16);
+    expect(made.height).toBe(16);
+    expect(Array.from(made.data)).toEqual(Array.from(page.data));
+  });
+});
+
+// 2026-10-13: the brightness of the paper is read by zones, not once for the whole page: a
+// shadow, a fold or a light from one side leaves part of the paper darker than the rest.
+describe("paper background", () => {
+  it("is the level of the page itself on an even page", () => {
+    const flat = picture(64, 48, () => [137, 137, 137]);
+    const level = background(flat);
+    expect(level).toHaveLength(64 * 48);
+    expect([...new Set(level)]).toEqual([137]);
+  });
+
+  // Ink is thin: the brightest of a zone is its paper, so a stroke does not darken it.
+  it("is still the paper under a thin dark line", () => {
+    const lined = picture(64, 64, (x) => (x === 30 ? [30, 30, 30] : [210, 210, 210]));
+    const level = background(lined);
+    for (const y of [0, 10, 31, 63]) {
+      for (const x of [0, 29, 30, 31, 63]) expect(level[y * 64 + x], `${x},${y}`).toBeCloseTo(210, 0);
+    }
+  });
+
+  it("follows a light that fades across the page", () => {
+    const fading = picture(200, 40, (x) => {
+      const level = Math.round(220 - x / 2);
+      return [level, level, level];
+    });
+    const level = background(fading);
+    expect(level[20 * 200 + 10]).toBeGreaterThan(level[20 * 200 + 190] + 60);
   });
 });
 
