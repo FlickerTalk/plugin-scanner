@@ -632,17 +632,26 @@ class Scanner extends HTMLElement {
           <ion-button data-act="pdf">${icon("send-outline")}</ion-button>
         </ion-buttons>
       </ion-toolbar>
-      <ion-toolbar>
-        <ion-segment value="${this.mode}">
-          ${Object.entries(MODES).map(([mode, name]) => `<ion-segment-button value="${mode}">${icon(name, "")}</ion-segment-button>`).join("")}
-        </ion-segment>
-      </ion-toolbar>
+      <ion-toolbar></ion-toolbar>
       </ion-header>
       <ion-content class="ion-padding"></ion-content>
     `;
     this.page = this.querySelector("ion-content");
     this.querySelector("ion-toolbar").onclick = (event) => this.onAct(event);
-    this.modes = this.querySelector("ion-segment");
+    this.modeBar = this.querySelectorAll(":scope > ion-header > ion-toolbar")[1];
+  }
+
+  /** The modes, named in the language. Ionic (9.0.4) gives a segment button's aria-label to its
+   *  native button once, when it first draws it, and never follows a change; so a new language
+   *  gets a new segment, which Ionic draws whole, the chosen mode and its neighbours included.
+   *  Only then: drawing it again on every change would make it flash. */
+  drawModes() {
+    const labels = Object.keys(MODES).map((mode) => this.T(mode));
+    if (this.modes && this.modeLabels === labels.join("\n")) return;
+    this.modeLabels = labels.join("\n");
+    const buttons = Object.entries(MODES).map(([mode, name], at) => `<ion-segment-button value="${mode}" aria-label="${escape(labels[at])}">${icon(name, "")}</ion-segment-button>`);
+    this.modeBar.innerHTML = `<ion-segment value="${this.mode}">${buttons.join("")}</ion-segment>`;
+    this.modes = this.modeBar.querySelector("ion-segment");
     this.modes.addEventListener("ionChange", (event) => this.choose(event.detail?.value));
     this.modes.onclick = (event) => this.choose(event.target.closest?.("ion-segment-button")?.getAttribute("value"));
   }
@@ -676,8 +685,8 @@ class Scanner extends HTMLElement {
     bar("keep", T("keep"), Boolean(this.result));
     bar("image", T("image"), Boolean(this.result || this.pages.length));
     bar("pdf", T("pdf"), Boolean(count));
+    this.drawModes();
     this.modes.value = this.mode;
-    for (const button of this.modes.querySelectorAll("ion-segment-button")) button.setAttribute("aria-label", T(button.getAttribute("value")));
     this.page.innerHTML = `
       <p class="note" ${this.note ? "" : "hidden"}>${escape(this.note ?? "")}</p>
       ${this.camera && !shown && !this.pages.length ? `<div class="choices"><ion-button fill="outline" data-act="camera" aria-label="${escape(T("camera"))}">${icon("camera-outline")}</ion-button><ion-button fill="outline" data-act="pick" aria-label="${escape(T("pick"))}">${icon("image-outline")}</ion-button></div>` : ""}
