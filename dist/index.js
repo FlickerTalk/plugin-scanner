@@ -1,0 +1,652 @@
+// No network and nothing of the chat, only the file the user picks or hands over with "open with".
+
+/** 3 × 3, row order, h33 = 1. */
+export function homography(from, to) {
+  const rows = [];
+  const rhs = [];
+  for (let i = 0; i < 4; i += 1) {
+    const { x, y } = from[i];
+    const { x: u, y: v } = to[i];
+    rows.push([x, y, 1, 0, 0, 0, -u * x, -u * y]);
+    rhs.push(u);
+    rows.push([0, 0, 0, x, y, 1, -v * x, -v * y]);
+    rhs.push(v);
+  }
+  const h = solve(rows, rhs);
+  if (!h) return null;
+  return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+}
+
+function solve(a, b) {
+  const n = b.length;
+  const m = a.map((row, i) => [...row, b[i]]);
+  for (let col = 0; col < n; col += 1) {
+    let best = col;
+    for (let row = col + 1; row < n; row += 1) if (Math.abs(m[row][col]) > Math.abs(m[best][col])) best = row;
+    if (Math.abs(m[best][col]) < 1e-12) return null;
+    [m[col], m[best]] = [m[best], m[col]];
+    for (let row = 0; row < n; row += 1) {
+      if (row === col) continue;
+      const factor = m[row][col] / m[col][col];
+      for (let k = col; k <= n; k += 1) m[row][k] -= factor * m[col][k];
+    }
+  }
+  return m.map((row, i) => row[n] / row[i]);
+}
+
+export function project(h, x, y) {
+  const w = h[6] * x + h[7] * y + h[8];
+  return { x: (h[0] * x + h[1] * y + h[2]) / w, y: (h[3] * x + h[4] * y + h[5]) / w };
+}
+
+const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+
+// corners go top left, top right, bottom right, bottom left
+export function quadSize(quad, max = WORK_PIXELS) {
+  const [tl, tr, br, bl] = quad;
+  let width = (distance(tl, tr) + distance(bl, br)) / 2;
+  let height = (distance(tl, bl) + distance(tr, br)) / 2;
+  const longest = Math.max(width, height);
+  if (longest > max) {
+    width *= max / longest;
+    height *= max / longest;
+  }
+  return { width: Math.max(8, Math.round(width)), height: Math.max(8, Math.round(height)) };
+}
+
+export function startingQuad({ width, height }, inset = 0.06) {
+  const dx = width * inset;
+  const dy = height * inset;
+  return [
+    { x: dx, y: dy },
+    { x: width - dx, y: dy },
+    { x: width - dx, y: height - dy },
+    { x: dx, y: height - dy },
+  ];
+}
+
+export function clamped({ x, y }, { width, height }) {
+  return { x: Math.min(Math.max(0, x), width), y: Math.min(Math.max(0, y), height) };
+}
+
+export function warp(source, quad, size) {
+  const { width, height } = size;
+  const target = [
+    { x: 0, y: 0 },
+    { x: width, y: 0 },
+    { x: width, y: height },
+    { x: 0, y: height },
+  ];
+  const back = homography(target, quad);
+  const out = new Uint8ClampedArray(width * height * 4);
+  if (!back) return { width, height, data: out.fill(255) };
+  const { data: src, width: sw, height: sh } = source;
+  let at = 0;
+  for (let row = 0; row < height; row += 1) {
+    for (let col = 0; col < width; col += 1) {
+      const { x, y } = project(back, col + 0.5, row + 0.5);
+      const x0 = Math.floor(x - 0.5);
+      const y0 = Math.floor(y - 0.5);
+      if (x0 < 0 || y0 < 0 || x0 >= sw - 1 || y0 >= sh - 1) {
+        out[at] = out[at + 1] = out[at + 2] = out[at + 3] = 255;
+        at += 4;
+        continue;
+      }
+      const fx = x - 0.5 - x0;
+      const fy = y - 0.5 - y0;
+      const i00 = (y0 * sw + x0) * 4;
+      const i10 = i00 + 4;
+      const i01 = i00 + sw * 4;
+      const i11 = i01 + 4;
+      for (let c = 0; c < 3; c += 1) {
+        const top = src[i00 + c] * (1 - fx) + src[i10 + c] * fx;
+        const bottom = src[i01 + c] * (1 - fx) + src[i11 + c] * fx;
+        out[at + c] = top * (1 - fy) + bottom * fy;
+      }
+      out[at + 3] = 255;
+      at += 4;
+    }
+  }
+  return { width, height, data: out };
+}
+
+/** Read by zones, since ink is thin and the brightest pixel of a zone is its paper. */
+export function background(page) {
+  const { width, height, data } = page;
+  const sw = Math.min(width, Math.max(8, Math.ceil(width / 8)));
+  const sh = Math.min(height, Math.max(8, Math.ceil(height / 8)));
+  const zones = new Float64Array(sw * sh);
+  const counts = new Uint32Array(sw * sh);
+  const column = new Uint32Array(width);
+  for (let x = 0; x < width; x += 1) column[x] = Math.floor((x * sw) / width);
+  for (let y = 0, i = 0; y < height; y += 1) {
+    const row = Math.floor((y * sh) / height) * sw;
+    for (let x = 0; x < width; x += 1, i += 4) {
+      zones[row + column[x]] += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      counts[row + column[x]] += 1;
+    }
+  }
+  for (let zone = 0; zone < zones.length; zone += 1) zones[zone] /= counts[zone];
+  let grid = along(along(zones, sw, sh, 2, true, true), sw, sh, 2, false, true);
+  const radius = Math.max(1, Math.round(sw * 0.08));
+  for (let pass = 0; pass < 2; pass += 1) grid = along(along(grid, sw, sh, radius, true, false), sw, sh, radius, false, false);
+  const where = (at, size, small) => {
+    const s = Math.min(small - 1, Math.max(0, ((at + 0.5) * small) / size - 0.5));
+    const low = Math.floor(s);
+    return [low, Math.min(small - 1, low + 1), s - low];
+  };
+  const left = new Uint32Array(width);
+  const right = new Uint32Array(width);
+  const across = new Float64Array(width);
+  for (let x = 0; x < width; x += 1) [left[x], right[x], across[x]] = where(x, width, sw);
+  const level = new Uint8ClampedArray(width * height);
+  for (let y = 0, p = 0; y < height; y += 1) {
+    const [low, high, down] = where(y, height, sh);
+    const top = low * sw;
+    const bottom = high * sw;
+    for (let x = 0; x < width; x += 1, p += 1) {
+      const above = grid[top + left[x]] + (grid[top + right[x]] - grid[top + left[x]]) * across[x];
+      const below = grid[bottom + left[x]] + (grid[bottom + right[x]] - grid[bottom + left[x]]) * across[x];
+      level[p] = above + (below - above) * down;
+    }
+  }
+  return level;
+}
+
+function along(values, width, height, radius, byRow, max) {
+  const out = new Float64Array(values.length);
+  const lines = byRow ? height : width;
+  const length = byRow ? width : height;
+  const step = byRow ? 1 : width;
+  for (let line = 0; line < lines; line += 1) {
+    const start = byRow ? line * width : line;
+    const at = (k) => values[start + Math.min(length - 1, Math.max(0, k)) * step];
+    let sum = 0;
+    for (let k = -radius; k <= radius; k += 1) sum += at(k);
+    for (let k = 0; k < length; k += 1) {
+      if (max) {
+        let best = at(k - radius);
+        for (let j = k - radius + 1; j <= k + radius; j += 1) best = Math.max(best, at(j));
+        out[start + k * step] = best;
+      } else {
+        out[start + k * step] = sum / (2 * radius + 1);
+        sum += at(k + radius + 1) - at(k - radius);
+      }
+    }
+  }
+  return out;
+}
+
+// per mode, the pixel-to-paper ratios that turn black and white
+const RAMPS = { grey: [0.4, 0.88], bw: [0.61, 0.69] };
+
+export function cleaned(page, mode = "grey") {
+  const ramp = RAMPS[mode];
+  if (!ramp) return page;
+  const [black, white] = ramp;
+  const { width, height, data } = page;
+  const paper = background(page);
+  const out = new Uint8ClampedArray(data.length);
+  for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
+    const ratio = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) / Math.max(paper[p], 40);
+    out[i] = out[i + 1] = out[i + 2] = ((ratio - black) / (white - black)) * 255;
+    out[i + 3] = 255;
+  }
+  return { width, height, data: out };
+}
+
+export function outName(name, extension) {
+  const base = String(name).split(/[\\/]/).pop()?.replace(/\.[^.]*$/, "") ?? "";
+  return `${base.trim() || "scan"}.${extension}`;
+}
+
+const A4 = { width: 595, height: 842 };
+const MARGIN = 24;
+
+export function a4Box({ width, height }) {
+  const room = { width: A4.width - MARGIN * 2, height: A4.height - MARGIN * 2 };
+  const scale = Math.min(room.width / width, room.height / height);
+  const drawn = { width: width * scale, height: height * scale };
+  return { page: A4, x: (A4.width - drawn.width) / 2, y: (A4.height - drawn.height) / 2, width: drawn.width, height: drawn.height };
+}
+
+const ascii = (text) => new TextEncoder().encode(text);
+
+export function pdfOf(pages) {
+  if (!pages.length) return null;
+  const parts = [];
+  const offsets = [0];
+  let at = 0;
+  const put = (bytes) => {
+    parts.push(bytes);
+    at += bytes.length;
+  };
+  const object = (number, body, stream) => {
+    offsets[number] = at;
+    put(ascii(`${number} 0 obj\n${body}\n`));
+    if (stream) {
+      put(ascii("stream\n"));
+      put(stream);
+      put(ascii("\nendstream\n"));
+    }
+    put(ascii("endobj\n"));
+  };
+  const first = 3;
+  const kids = pages.map((_, index) => `${first + index * 3} 0 R`).join(" ");
+  put(new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
+  object(1, "<< /Type /Catalog /Pages 2 0 R >>");
+  object(2, `<< /Type /Pages /Kids [${kids}] /Count ${pages.length} >>`);
+  pages.forEach((page, index) => {
+    const number = first + index * 3;
+    const box = a4Box(page);
+    const drawn = ascii(`q\n${box.width.toFixed(2)} 0 0 ${box.height.toFixed(2)} ${box.x.toFixed(2)} ${box.y.toFixed(2)} cm\n/Im0 Do\nQ\n`);
+    object(
+      number,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${box.page.width} ${box.page.height}] ` +
+        `/Resources << /XObject << /Im0 ${number + 2} 0 R >> >> /Contents ${number + 1} 0 R >>`,
+    );
+    object(number + 1, `<< /Length ${drawn.length} >>`, drawn);
+    object(
+      number + 2,
+      `<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB ` +
+        `/BitsPerComponent 8 /Filter /DCTDecode /Length ${page.jpeg.length} >>`,
+      page.jpeg,
+    );
+  });
+  const count = offsets.length;
+  const table = [`xref\n0 ${count}\n`, "0000000000 65535 f \n"];
+  for (let number = 1; number < count; number += 1) table.push(`${String(offsets[number]).padStart(10, "0")} 00000 n \n`);
+  const startxref = at;
+  put(ascii(table.join("")));
+  put(ascii(`trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${startxref}\n%%EOF\n`));
+  const all = new Uint8Array(parts.reduce((total, part) => total + part.length, 0));
+  let written = 0;
+  for (const part of parts) {
+    all.set(part, written);
+    written += part.length;
+  }
+  return all;
+}
+
+// in chunks the browser can take
+export function base64Of(bytes) {
+  let binary = "";
+  for (let at = 0; at < bytes.length; at += 8192) binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
+  return btoa(binary);
+}
+
+function bytesOf(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let at = 0; at < binary.length; at += 1) bytes[at] = binary.charCodeAt(at);
+  return bytes;
+}
+
+function stamp() {
+  const now = new Date();
+  const two = (value) => String(value).padStart(2, "0");
+  return `scan-${now.getFullYear()}${two(now.getMonth() + 1)}${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}${two(now.getSeconds())}`;
+}
+
+export const TEXTS = {
+  en: { pick: "Pick a photo", camera: "Take a photo", corners: "Drag the corners to the edges of the paper", scan: "Straighten", colour: "Colour", grey: "Greyscale", bw: "Black and white", keep: "Add this page", image: "Send as a picture", pdf: "Send the PDF", pages: "{n} pages", page: "1 page", cannot: "That picture cannot be read", drop: "Take out", again: "New photo" },
+  es: { pick: "Elegir una foto", camera: "Hacer una foto", corners: "Arrastra las esquinas a los bordes del papel", scan: "Enderezar", colour: "Color", grey: "Escala de grises", bw: "Blanco y negro", keep: "Añadir esta página", image: "Enviar como imagen", pdf: "Enviar el PDF", pages: "{n} páginas", page: "1 página", cannot: "Esa imagen no se puede leer", drop: "Quitar", again: "Otra foto" },
+  pt: { pick: "Escolher uma foto", camera: "Tirar uma foto", corners: "Arraste os cantos até às bordas do papel", scan: "Endireitar", colour: "Cor", grey: "Escala de cinzentos", bw: "Preto e branco", keep: "Adicionar esta página", image: "Enviar como imagem", pdf: "Enviar o PDF", pages: "{n} páginas", page: "1 página", cannot: "Essa imagem não pode ser lida", drop: "Retirar", again: "Outra foto" },
+  fr: { pick: "Choisir une photo", camera: "Prendre une photo", corners: "Faites glisser les coins jusqu’aux bords du papier", scan: "Redresser", colour: "Couleur", grey: "Niveaux de gris", bw: "Noir et blanc", keep: "Ajouter cette page", image: "Envoyer en image", pdf: "Envoyer le PDF", pages: "{n} pages", page: "1 page", cannot: "Cette image ne peut pas être lue", drop: "Retirer", again: "Autre photo" },
+  de: { pick: "Foto wählen", camera: "Foto aufnehmen", corners: "Zieh die Ecken an die Ränder des Blatts", scan: "Begradigen", colour: "Farbe", grey: "Graustufen", bw: "Schwarzweiß", keep: "Diese Seite hinzufügen", image: "Als Bild senden", pdf: "PDF senden", pages: "{n} Seiten", page: "1 Seite", cannot: "Dieses Bild kann nicht gelesen werden", drop: "Entfernen", again: "Neues Foto" },
+  it: { pick: "Scegli una foto", camera: "Scatta una foto", corners: "Trascina gli angoli ai bordi del foglio", scan: "Raddrizza", colour: "Colore", grey: "Scala di grigi", bw: "Bianco e nero", keep: "Aggiungi questa pagina", image: "Invia come immagine", pdf: "Invia il PDF", pages: "{n} pagine", page: "1 pagina", cannot: "Questa immagine non si può leggere", drop: "Togli", again: "Nuova foto" },
+  ro: { pick: "Alege o fotografie", camera: "Fă o fotografie", corners: "Trage colțurile la marginile hârtiei", scan: "Îndreaptă", colour: "Color", grey: "Nuanțe de gri", bw: "Alb-negru", keep: "Adaugă această pagină", image: "Trimite ca imagine", pdf: "Trimite PDF-ul", pages: "{n} pagini", page: "1 pagină", cannot: "Imaginea nu poate fi citită", drop: "Scoate", again: "Altă fotografie" },
+  ru: { pick: "Выбрать фото", camera: "Сделать фото", corners: "Перетащите углы к краям листа", scan: "Выровнять", colour: "Цвет", grey: "Оттенки серого", bw: "Чёрно-белый", keep: "Добавить эту страницу", image: "Отправить как изображение", pdf: "Отправить PDF", pages: "Страниц: {n}", page: "1 страница", cannot: "Это изображение не читается", drop: "Убрать", again: "Новое фото" },
+  uk: { pick: "Вибрати фото", camera: "Зробити фото", corners: "Перетягніть кути до країв аркуша", scan: "Вирівняти", colour: "Колір", grey: "Відтінки сірого", bw: "Чорно-білий", keep: "Додати цю сторінку", image: "Надіслати як зображення", pdf: "Надіслати PDF", pages: "Сторінок: {n}", page: "1 сторінка", cannot: "Це зображення не читається", drop: "Прибрати", again: "Нове фото" },
+  pl: { pick: "Wybierz zdjęcie", camera: "Zrób zdjęcie", corners: "Przeciągnij rogi do krawędzi kartki", scan: "Wyprostuj", colour: "Kolor", grey: "Skala szarości", bw: "Czarno-białe", keep: "Dodaj tę stronę", image: "Wyślij jako obraz", pdf: "Wyślij PDF", pages: "Stron: {n}", page: "1 strona", cannot: "Tego obrazu nie da się odczytać", drop: "Usuń", again: "Nowe zdjęcie" },
+  tr: { pick: "Fotoğraf seç", camera: "Fotoğraf çek", corners: "Köşeleri kâğıdın kenarlarına sürükle", scan: "Düzelt", colour: "Renkli", grey: "Gri tonlamalı", bw: "Siyah beyaz", keep: "Bu sayfayı ekle", image: "Görsel olarak gönder", pdf: "PDF’yi gönder", pages: "{n} sayfa", page: "1 sayfa", cannot: "Bu görsel okunamıyor", drop: "Çıkar", again: "Yeni fotoğraf" },
+  ar: { pick: "اختيار صورة", camera: "التقاط صورة", corners: "اسحب الزوايا إلى حواف الورقة", scan: "تقويم", colour: "ملوّن", grey: "تدرّج رمادي", bw: "أبيض وأسود", keep: "إضافة هذه الصفحة", image: "إرسال كصورة", pdf: "إرسال ملف PDF", pages: "{n} صفحات", page: "صفحة واحدة", cannot: "تعذّر قراءة هذه الصورة", drop: "إزالة", again: "صورة جديدة" },
+  hi: { pick: "फ़ोटो चुनें", camera: "फ़ोटो लें", corners: "कोनों को कागज़ के किनारों तक खींचें", scan: "सीधा करें", colour: "रंगीन", grey: "ग्रेस्केल", bw: "श्वेत-श्याम", keep: "यह पृष्ठ जोड़ें", image: "तस्वीर के रूप में भेजें", pdf: "PDF भेजें", pages: "{n} पृष्ठ", page: "1 पृष्ठ", cannot: "यह तस्वीर पढ़ी नहीं जा सकती", drop: "हटाएँ", again: "नई फ़ोटो" },
+  bn: { pick: "ছবি বাছুন", camera: "ছবি তুলুন", corners: "কোণগুলো কাগজের কিনারায় টেনে আনুন", scan: "সোজা করুন", colour: "রঙিন", grey: "গ্রেস্কেল", bw: "সাদা-কালো", keep: "এই পৃষ্ঠা যোগ করুন", image: "ছবি হিসেবে পাঠান", pdf: "PDF পাঠান", pages: "{n} পৃষ্ঠা", page: "১ পৃষ্ঠা", cannot: "এই ছবি পড়া যাচ্ছে না", drop: "সরান", again: "নতুন ছবি" },
+  id: { pick: "Pilih foto", camera: "Ambil foto", corners: "Seret sudut-sudut ke tepi kertas", scan: "Luruskan", colour: "Berwarna", grey: "Skala abu-abu", bw: "Hitam putih", keep: "Tambahkan halaman ini", image: "Kirim sebagai gambar", pdf: "Kirim PDF", pages: "{n} halaman", page: "1 halaman", cannot: "Gambar itu tidak bisa dibaca", drop: "Keluarkan", again: "Foto baru" },
+  vi: { pick: "Chọn ảnh", camera: "Chụp ảnh", corners: "Kéo các góc đến mép tờ giấy", scan: "Làm thẳng", colour: "Màu", grey: "Thang xám", bw: "Đen trắng", keep: "Thêm trang này", image: "Gửi dưới dạng ảnh", pdf: "Gửi PDF", pages: "{n} trang", page: "1 trang", cannot: "Không đọc được ảnh đó", drop: "Bỏ ra", again: "Ảnh mới" },
+  th: { pick: "เลือกรูปถ่าย", camera: "ถ่ายรูป", corners: "ลากมุมไปที่ขอบกระดาษ", scan: "ปรับให้ตรง", colour: "สี", grey: "ระดับสีเทา", bw: "ขาวดำ", keep: "เพิ่มหน้านี้", image: "ส่งเป็นรูปภาพ", pdf: "ส่ง PDF", pages: "{n} หน้า", page: "1 หน้า", cannot: "อ่านรูปนี้ไม่ได้", drop: "นำออก", again: "รูปใหม่" },
+  ja: { pick: "写真を選ぶ", camera: "写真を撮る", corners: "角を紙の端までドラッグ", scan: "まっすぐにする", colour: "カラー", grey: "グレースケール", bw: "白黒", keep: "このページを追加", image: "画像として送信", pdf: "PDF を送信", pages: "{n} ページ", page: "1 ページ", cannot: "この画像は読み込めません", drop: "取り除く", again: "新しい写真" },
+  ko: { pick: "사진 선택", camera: "사진 찍기", corners: "모서리를 종이 가장자리로 끌어다 놓으세요", scan: "반듯하게", colour: "컬러", grey: "회색조", bw: "흑백", keep: "이 페이지 추가", image: "이미지로 보내기", pdf: "PDF 보내기", pages: "{n}페이지", page: "1페이지", cannot: "이 이미지를 읽을 수 없습니다", drop: "빼기", again: "새 사진" },
+  "zh-CN": { pick: "选择照片", camera: "拍照", corners: "把四角拖到纸张边缘", scan: "校正", colour: "彩色", grey: "灰度", bw: "黑白", keep: "添加此页", image: "作为图片发送", pdf: "发送 PDF", pages: "{n} 页", page: "1 页", cannot: "无法读取该图片", drop: "移除", again: "新照片" },
+  "zh-TW": { pick: "選擇照片", camera: "拍照", corners: "把四角拖到紙張邊緣", scan: "校正", colour: "彩色", grey: "灰階", bw: "黑白", keep: "加入此頁", image: "以圖片傳送", pdf: "傳送 PDF", pages: "{n} 頁", page: "1 頁", cannot: "無法讀取該圖片", drop: "移除", again: "新照片" },
+};
+
+export function t(lang, key, vars = {}) {
+  const table = TEXTS[lang] ?? TEXTS[String(lang).split("-")[0]] ?? TEXTS.en;
+  const text = table[key] ?? TEXTS.en[key] ?? key;
+  return text.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? ""));
+}
+
+const STYLE = `
+ft-scanner { display: flex; flex-direction: column; height: 100%; --accent: var(--ion-color-primary, #0a7); }
+ft-scanner ion-content { flex: 1; }
+ft-scanner .ft-i { display: block; width: 22px; height: 22px; background: currentColor; -webkit-mask: var(--i) center/contain no-repeat; mask: var(--i) center/contain no-repeat; }
+ft-scanner .choices { display: flex; justify-content: center; gap: 16px; padding: 32px 0; }
+ft-scanner .choices ion-button { width: 96px; height: 96px; --border-radius: 20px; }
+ft-scanner .choices .ft-i { width: 44px; height: 44px; }
+ft-scanner .choices ion-icon { font-size: 44px; }
+ft-scanner .note { font-size: 12px; color: var(--ion-color-medium, inherit); margin: 0 0 8px; }
+ft-scanner .stage { position: relative; display: inline-block; max-width: 100%; touch-action: none; }
+ft-scanner .stage canvas { display: block; max-width: 100%; border-radius: 8px; }
+ft-scanner .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+ft-scanner .stage polygon { fill: rgba(0, 170, 120, .15); stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+ft-scanner .handle { appearance: none; position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 0; background: transparent; padding: 0; }
+ft-scanner .handle::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: var(--accent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+ft-scanner ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+ft-scanner li { display: flex; align-items: center; gap: 8px; }
+ft-scanner li img { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; background: #fff; }
+ft-scanner li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+`;
+
+// an ion-segment-button has only its default slot, so `slot` is empty there
+const icon = (name, slot = "icon-only") => {
+  const at = slot ? ` slot="${slot}"` : "";
+  return globalThis.Ionicons?.map?.has(name)
+    ? `<ion-icon${at} name="${name}" aria-hidden="true"></ion-icon>`
+    : `<i${at} class="ft-i" style="--i:url(./icon/${name}.svg)" aria-hidden="true"></i>`;
+};
+
+const MODES = { colour: "color-palette-outline", grey: "contrast-outline", bw: "invert-mode-outline" };
+
+// not lent by the app, so handed to its Ionic with ftIonic.addIcons (ionicons 8.1.0, MIT)
+const OWN_ICONS = {
+  "invert-mode-outline":
+    "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' class='ionicon'><circle cx='256' cy='256' r='208' stroke-miterlimit='10' class='ionicon-fill-none ionicon-stroke-width'/><path d='M256 176v160a80 80 0 0 1 0-160M256 48v128a80 80 0 0 1 0 160v128c114.88 0 208-93.12 208-208S370.88 48 256 48'/></svg>",
+};
+
+function lendOwnIcons() {
+  const missing = Object.entries(OWN_ICONS).filter(([name]) => !globalThis.Ionicons?.map?.has(name));
+  if (missing.length) globalThis.ftIonic?.addIcons?.(Object.fromEntries(missing));
+}
+
+// about 210 dpi on an A4 sheet, so printed text stays sharp
+export const WORK_PIXELS = 2500;
+const VIEW_PIXELS = 1024;
+
+class Scanner extends HTMLElement {
+  constructor() {
+    super();
+    this.lang = "en";
+    this.source = null;
+    this.quad = null;
+    this.result = null;
+    this.mode = "grey";
+    this.pages = [];
+    this.name = "scan.jpg";
+    this.dragging = -1;
+  }
+
+  connectedCallback() {
+    this.paint();
+    globalThis.ft?.onOpen?.((opening) => {
+      this.lang = opening?.lang || "en";
+      this.paint();
+      if (opening?.file?.data) this.load(opening.file);
+      else if (!this.source && !this.pages.length && !this.camera) this.ask();
+    });
+  }
+
+  T(key, vars) {
+    return t(this.lang, key, vars);
+  }
+
+  get camera() {
+    return typeof globalThis.ft?.takePhoto === "function";
+  }
+
+  async shoot() {
+    const photo = await globalThis.ft.takePhoto();
+    if (photo) await this.load(photo);
+  }
+
+  async ask() {
+    const picked = await globalThis.ft?.pickFile?.("image/*");
+    if (picked) await this.load(picked);
+  }
+
+  async load(picked) {
+    const image = new Image();
+    image.src = `data:${picked.mime || "image/jpeg"};base64,${picked.data}`;
+    await image.decode().catch(() => {});
+    if (!image.naturalWidth) {
+      this.note = this.T("cannot");
+      this.paint();
+      return;
+    }
+    this.name = picked.name || "scan.jpg";
+    const size = fit(image.naturalWidth, image.naturalHeight, WORK_PIXELS);
+    const canvas = document.createElement("canvas");
+    canvas.width = size.width;
+    canvas.height = size.height;
+    canvas.getContext("2d")?.drawImage(image, 0, 0, size.width, size.height);
+    this.source = canvas;
+    this.quad = startingQuad(size);
+    this.result = null;
+    this.note = this.T("corners");
+    this.paint();
+  }
+
+  straighten() {
+    if (!this.source || !this.quad) return;
+    const context = this.source.getContext("2d");
+    if (!context) return;
+    const data = context.getImageData(0, 0, this.source.width, this.source.height);
+    const size = quadSize(this.quad, WORK_PIXELS);
+    let page = warp(data, this.quad, size);
+    page = cleaned(page, this.mode);
+    const canvas = document.createElement("canvas");
+    canvas.width = page.width;
+    canvas.height = page.height;
+    canvas.getContext("2d")?.putImageData(new ImageData(page.data, page.width, page.height), 0, 0);
+    this.result = canvas;
+    this.note = "";
+    this.paint();
+  }
+
+  /** A tap arrives twice, as the click and as Ionic's ionChange, and the second finds the mode set. */
+  choose(mode) {
+    if (!Object.keys(MODES).includes(mode) || mode === this.mode) return;
+    this.mode = mode;
+    if (this.result) this.straighten();
+    else this.paint();
+  }
+
+  keep() {
+    if (!this.result) return;
+    this.pages.push({ canvas: this.result, name: this.name });
+    this.source = null;
+    this.result = null;
+    this.quad = null;
+    this.paint();
+  }
+
+  drop(at) {
+    this.pages.splice(at, 1);
+    this.paint();
+  }
+
+  again() {
+    this.source = null;
+    this.result = null;
+    this.quad = null;
+    this.ask();
+  }
+
+  jpegOf(canvas) {
+    const url = canvas.toDataURL("image/jpeg", 0.85);
+    return { jpeg: bytesOf(url.slice(url.indexOf(",") + 1)), width: canvas.width, height: canvas.height };
+  }
+
+  sendPdf() {
+    const all = [...this.pages.map((page) => page.canvas), ...(this.result ? [this.result] : [])];
+    const made = pdfOf(all.map((canvas) => this.jpegOf(canvas)));
+    if (!made) return;
+    globalThis.ft.send(`${stamp()}.pdf`, "application/pdf", base64Of(made));
+  }
+
+  sendImage() {
+    const canvas = this.result ?? this.pages.at(-1)?.canvas;
+    if (!canvas) return;
+    const url = canvas.toDataURL("image/jpeg", 0.85);
+    globalThis.ft.send(outName(this.name, "jpg"), "image/jpeg", url.slice(url.indexOf(",") + 1));
+  }
+
+  at(event) {
+    const box = this.stage.querySelector("canvas").getBoundingClientRect();
+    const scale = this.source.width / (box.width || 1);
+    return clamped({ x: (event.clientX - box.left) * scale, y: (event.clientY - box.top) * scale }, this.source);
+  }
+
+  onDown(event) {
+    const handle = event.target.closest?.("[data-corner]");
+    if (!handle || !this.source || this.result) return;
+    this.dragging = Number(handle.dataset.corner);
+    handle.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  }
+
+  onMove(event) {
+    if (this.dragging < 0) return;
+    this.quad[this.dragging] = this.at(event);
+    this.placeCorners();
+  }
+
+  onUp() {
+    this.dragging = -1;
+  }
+
+  placeCorners() {
+    if (!this.stage || !this.source || !this.quad) return;
+    const canvas = this.stage.querySelector("canvas");
+    const scale = (canvas.clientWidth || canvas.width) / this.source.width;
+    this.quad.forEach((corner, index) => {
+      const handle = this.stage.querySelector(`[data-corner="${index}"]`);
+      if (handle) {
+        handle.style.left = `${corner.x * scale}px`;
+        handle.style.top = `${corner.y * scale}px`;
+      }
+    });
+    const polygon = this.stage.querySelector("polygon");
+    if (polygon) polygon.setAttribute("points", this.quad.map((corner) => `${corner.x * scale},${corner.y * scale}`).join(" "));
+  }
+
+  /** No shadow root, Ionic's global styles don't cross it. Drawn once, because redrawn bars make
+   *  Ionic's buttons flash. */
+  frame() {
+    if (this.page) return;
+    lendOwnIcons();
+    this.innerHTML = `
+      <style>${STYLE}</style>
+      <ion-header>
+      <ion-toolbar>
+        <ion-buttons slot="start">
+          ${this.camera ? `<ion-button data-act="camera">${icon("camera-outline")}</ion-button>` : ""}
+          <ion-button data-act="pick">${icon("image-outline")}</ion-button>
+          <ion-button data-act="scan">${icon("crop-outline")}</ion-button>
+          <ion-button data-act="keep">${icon("add-outline")}</ion-button>
+        </ion-buttons>
+        <ion-buttons slot="end">
+          <ion-button data-act="image">${icon("image-outline")}</ion-button>
+          <ion-button data-act="pdf">${icon("send-outline")}</ion-button>
+        </ion-buttons>
+      </ion-toolbar>
+      <ion-toolbar></ion-toolbar>
+      </ion-header>
+      <ion-content class="ion-padding"></ion-content>
+    `;
+    this.page = this.querySelector("ion-content");
+    this.querySelector("ion-toolbar").onclick = (event) => this.onAct(event);
+    this.modeBar = this.querySelectorAll(":scope > ion-header > ion-toolbar")[1];
+  }
+
+  /** Ionic 9.0.4 gives a segment button's aria-label to its native button only when it first draws
+   *  it, so a new language gets a new segment. Only then, or it would flash. */
+  drawModes() {
+    const labels = Object.keys(MODES).map((mode) => this.T(mode));
+    if (this.modes && this.modeLabels === labels.join("\n")) return;
+    this.modeLabels = labels.join("\n");
+    const buttons = Object.entries(MODES).map(([mode, name], at) => `<ion-segment-button value="${mode}" aria-label="${escape(labels[at])}">${icon(name, "")}</ion-segment-button>`);
+    this.modeBar.innerHTML = `<ion-segment value="${this.mode}">${buttons.join("")}</ion-segment>`;
+    this.modes = this.modeBar.querySelector("ion-segment");
+    this.modes.addEventListener("ionChange", (event) => this.choose(event.detail?.value));
+    this.modes.onclick = (event) => this.choose(event.target.closest?.("ion-segment-button")?.getAttribute("value"));
+  }
+
+  onAct(event) {
+    const button = event.target.closest("ion-button");
+    if (!button || button.disabled) return;
+    const { act } = button.dataset;
+    if (act === "camera") this.shoot();
+    else if (act === "pick") this.again();
+    else if (act === "scan") this.straighten();
+    else if (act === "keep") this.keep();
+    else if (act === "image") this.sendImage();
+    else if (act === "pdf") this.sendPdf();
+  }
+
+  paint() {
+    const T = (key, vars) => this.T(key, vars);
+    const shown = this.result ?? this.source;
+    const count = this.pages.length + (this.result ? 1 : 0);
+    this.frame();
+    const bar = (act, label, enabled = true) => {
+      const button = this.querySelector(`ion-toolbar [data-act="${act}"]`);
+      if (!button) return;
+      button.setAttribute("aria-label", label);
+      button.disabled = !enabled;
+    };
+    bar("camera", T("camera"));
+    bar("pick", T(shown ? "again" : "pick"));
+    bar("scan", T("scan"), Boolean(this.source && !this.result));
+    bar("keep", T("keep"), Boolean(this.result));
+    bar("image", T("image"), Boolean(this.result || this.pages.length));
+    bar("pdf", T("pdf"), Boolean(count));
+    this.drawModes();
+    this.modes.value = this.mode;
+    this.page.innerHTML = `
+      <p class="note" ${this.note ? "" : "hidden"}>${escape(this.note ?? "")}</p>
+      ${this.camera && !shown && !this.pages.length ? `<div class="choices"><ion-button fill="outline" data-act="camera" aria-label="${escape(T("camera"))}">${icon("camera-outline")}</ion-button><ion-button fill="outline" data-act="pick" aria-label="${escape(T("pick"))}">${icon("image-outline")}</ion-button></div>` : ""}
+      ${shown ? '<div class="stage"><canvas></canvas><svg><polygon points=""></polygon></svg>' + (this.result ? "" : [0, 1, 2, 3].map((i) => `<button class="handle" data-corner="${i}" aria-label="${escape(T("corners"))}"></button>`).join("")) + "</div>" : ""}
+      <ol>${this.pages.map((page, at) => `<li><img alt="" src="${page.canvas.toDataURL("image/jpeg", 0.6)}"><span class="name">${at + 1}. ${escape(page.name)}</span><ion-button fill="clear" data-act="drop" data-at="${at}" aria-label="${escape(T("drop"))}">${icon("trash-outline")}</ion-button></li>`).join("")}</ol>
+      <p class="note" ${count ? "" : "hidden"}>${count === 1 ? escape(T("page")) : escape(T("pages", { n: count }))}</p>
+    `;
+    this.stage = this.page.querySelector(".stage");
+    if (shown && this.stage) {
+      const canvas = this.stage.querySelector("canvas");
+      const view = fit(shown.width, shown.height, VIEW_PIXELS);
+      canvas.width = view.width;
+      canvas.height = view.height;
+      canvas.getContext("2d")?.drawImage(shown, 0, 0, view.width, view.height);
+      if (!this.result) {
+        this.stage.addEventListener("pointerdown", (event) => this.onDown(event));
+        this.stage.addEventListener("pointermove", (event) => this.onMove(event));
+        this.stage.addEventListener("pointerup", () => this.onUp());
+        this.stage.addEventListener("pointercancel", () => this.onUp());
+        this.stage.querySelector("svg").style.display = "";
+        this.placeCorners();
+      } else {
+        this.stage.querySelector("svg").style.display = "none";
+      }
+    }
+    const choices = this.page.querySelector(".choices");
+    if (choices) choices.onclick = (event) => this.onAct(event);
+    this.page.querySelector("ol").onclick = (event) => {
+      const button = event.target.closest("ion-button[data-act='drop']");
+      if (button) this.drop(Number(button.dataset.at));
+    };
+  }
+}
+
+function fit(width, height, max) {
+  const longest = Math.max(width, height);
+  if (longest <= max) return { width, height };
+  const scale = max / longest;
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+}
+
+function escape(text) {
+  return String(text).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+}
+
+if (!customElements.get("ft-scanner")) customElements.define("ft-scanner", Scanner);
